@@ -71,9 +71,9 @@ const EMPTY_BOARD: (string | null)[][] = Array.from({ length: 15 }, () =>
   Array.from({ length: 15 }, () => null)
 );
 
-export type PendingPlacements = Record<string, { letter: string; rackIndex: number }>;
+export type PendingPlacements = Record<string, { letter: string; rackIndex: number; isBlank?: boolean }>;
 
-function DraggableTile({ row, col, letter }: { row: number; col: number; letter: string }) {
+function DraggableTile({ row, col, letter, isBlank }: { row: number; col: number; letter: string; isBlank?: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `board-${row}-${col}`,
     data: { letter, source: 'board', fromKey: `${row}-${col}` },
@@ -87,10 +87,10 @@ function DraggableTile({ row, col, letter }: { row: number; col: number; letter:
       className={`absolute inset-0 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none transition-opacity ${isDragging ? 'opacity-30' : ''}`}
     >
       <span className="text-[clamp(14px,5vw,32px)] font-bold text-gray-900 leading-none select-none">
-        {letter}
+        {letter.toUpperCase()}
       </span>
       <span className="absolute bottom-0 right-[1px] text-[clamp(5px,1.5vw,11px)] font-semibold text-gray-600 leading-none select-none">
-        {TILE_VALUES[letter] ?? 0}
+        {isBlank ? 0 : (TILE_VALUES[letter] ?? 0)}
       </span>
     </div>
   );
@@ -101,11 +101,12 @@ interface BoardCellProps {
   col: number;
   letter: string | null;
   isPending: boolean;
+  isBlank?: boolean;
   isValidPlay: boolean;
   squareType: SquareType;
 }
 
-function BoardCell({ row, col, letter, isPending, isValidPlay, squareType }: BoardCellProps) {
+function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareType }: BoardCellProps) {
   const occupied = letter !== null;
   const { setNodeRef, isOver } = useDroppable({
     id: `${row}-${col}`,
@@ -132,11 +133,11 @@ function BoardCell({ row, col, letter, isPending, isValidPlay, squareType }: Boa
     >
       {occupied ? (
         isPending ? (
-          <DraggableTile row={row} col={col} letter={letter} />
+          <DraggableTile row={row} col={col} letter={letter} isBlank={isBlank} />
         ) : (
           <>
             <span className="text-[clamp(14px,5vw,32px)] font-bold text-gray-900 leading-none select-none">
-              {letter}
+              {letter.toUpperCase()}
             </span>
             <span className="absolute bottom-0 right-[1px] text-[clamp(5px,1.5vw,11px)] font-semibold text-gray-600 leading-none select-none">
               {TILE_VALUES[letter] ?? 0}
@@ -188,6 +189,7 @@ export function GameBoard({ board, pendingPlacements, isValidPlay = false }: Gam
               col={c}
               letter={letter}
               isPending={Boolean(pendingPlacements?.[`${r}-${c}`])}
+              isBlank={pendingPlacements?.[`${r}-${c}`]?.isBlank}
               isValidPlay={isValidPlay}
               squareType={getSquareType(r, c)}
             />

@@ -15,7 +15,7 @@ interface RackSlotProps {
 }
 
 function RackSlot({ letter, originalIndex, slotIndex, isPlaced }: RackSlotProps) {
-  const isBlank = letter === '' || letter === ' ';
+  const isBlank = letter === '' || letter === ' ' || letter === '?';
 
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: `rack-${originalIndex}`,

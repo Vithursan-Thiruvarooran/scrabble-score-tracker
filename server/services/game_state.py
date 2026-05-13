@@ -82,7 +82,8 @@ def _score_word(
     word_mult = 1
     for (r, c) in cells:
         letter = board[r][c]
-        val = TILE_VALUES.get(letter.upper(), 0) if letter else 0
+        # Lowercase letters are blanks — they score 0; uppercase uses the standard table.
+        val = TILE_VALUES.get(letter, 0) if letter else 0
         if (r, c) in new_pos:
             if (r, c) in _TL:
                 val *= 3
@@ -396,19 +397,36 @@ async def apply_place(
     rack: List[str] = list(state["racks"].get(player_id, []))
     board: List[List[Optional[str]]] = state["board"]
 
-    err = _validate_rack_tiles(rack, [t["letter"] for t in tiles])
-    if err:
-        return state, err
+    # Validate that the player has all required tiles (blanks must come from '?').
+    available = list(rack)
+    for t in tiles:
+        letter: str = t["letter"].upper()
+        is_blank: bool = bool(t.get("is_blank", False))
+        if is_blank:
+            if "?" not in available:
+                return state, f"You don't have a blank tile to play as '{letter}'."
+            available.remove("?")
+        else:
+            if letter in available:
+                available.remove(letter)
+            elif "?" in available:
+                available.remove("?")
+            else:
+                return state, f"Tile '{letter}' is not in your rack."
 
     err = _validate_placement(board, tiles)
     if err:
         return state, err
 
-    # Place tiles on board and consume from rack
+    # Place tiles on board and consume from rack.
+    # Blank tiles are stored as lowercase so scoring gives them 0 value.
     for t in tiles:
-        letter: str = t["letter"]
-        board[t["row"]][t["col"]] = letter
-        if letter in rack:
+        letter = t["letter"].upper()
+        is_blank = bool(t.get("is_blank", False))
+        board[t["row"]][t["col"]] = letter.lower() if is_blank else letter
+        if is_blank:
+            rack.remove("?")
+        elif letter in rack:
             rack.remove(letter)
         elif "?" in rack:
             rack.remove("?")

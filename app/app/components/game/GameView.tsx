@@ -11,6 +11,7 @@ import { Link } from 'react-router';
 import type { Game, GameState } from '../../services/game';
 import { GameBoard, type PendingPlacements } from './GameBoard';
 import { Rack } from './Rack';
+import { RecycleZone } from './RecycleZone';
 import { GameToolbar } from './GameToolbar';
 import { useAuth } from '../../context/AuthContext';
 
@@ -98,7 +99,11 @@ export function GameView() {
   const myRack = myUserId && gameState ? (gameState.racks[myUserId] ?? []) : [];
 
   const [pendingPlacements, setPendingPlacements] = useState<PendingPlacements>({});
+  const [recycleIndices, setRecycleIndices] = useState<number[]>([]);
+  const [isRecycleOpen, setIsRecycleOpen] = useState(false);
   const [activeTileLetter, setActiveTileLetter] = useState<string | null>(null);
+  const [activeTileIsBlank, setActiveTileIsBlank] = useState(false);
+  const [blankModalState, setBlankModalState] = useState<{ rackIndex: number; boardKey: string } | null>(null);
   const [rackOrder, setRackOrder] = useState<number[]>([]);
 
   // Reset rack order whenever the tile content changes (e.g. after a turn is committed)
@@ -109,9 +114,15 @@ export function GameView() {
     setRackOrder(myRack.map((_, i) => i));
   }
 
-  const placedRackIndices = useMemo(
-    () => new Set(Object.values(pendingPlacements).map((p) => p.rackIndex)),
-    [pendingPlacements]
+  // Indices that are "in use" — on the board, in the recycle zone, or awaiting blank letter
+  // selection — so the rack grays them out.
+  const usedRackIndices = useMemo(
+    () => new Set([
+      ...Object.values(pendingPlacements).map((p) => p.rackIndex),
+      ...recycleIndices,
+      ...(blankModalState ? [blankModalState.rackIndex] : []),
+    ]),
+    [pendingPlacements, recycleIndices, blankModalState]
   );
 
   const isValidPlay = useMemo(
@@ -122,7 +133,14 @@ export function GameView() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveTileLetter((event.active.data.current as { letter: string }).letter);
+    const data = event.active.data.current as { letter: string; source: string; fromKey?: string };
+    setActiveTileLetter(data.letter);
+    const isBlank =
+      data.letter === '?' ||
+      (data.source === 'board' && data.fromKey
+        ? Boolean(pendingPlacements[data.fromKey]?.isBlank)
+        : false);
+    setActiveTileIsBlank(isBlank);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -146,6 +164,16 @@ export function GameView() {
           delete next[data.fromKey!];
           return next;
         });
+      }
+      return;
+    }
+
+    // Dropping on the recycle zone — only rack tiles can be recycled
+    if (overId === 'recycle-zone') {
+      if (source === 'rack' && data.rackIndex !== undefined) {
+        setRecycleIndices((prev) =>
+          prev.includes(data.rackIndex!) ? prev : [...prev, data.rackIndex!]
+        );
       }
       return;
     }
@@ -181,7 +209,11 @@ export function GameView() {
     if (pendingPlacements[overId]) return;
 
     if (source === 'rack' && data.rackIndex !== undefined) {
-      setPendingPlacements((prev) => ({ ...prev, [overId]: { letter, rackIndex: data.rackIndex! } }));
+      if (letter === '?') {
+        setBlankModalState({ rackIndex: data.rackIndex, boardKey: overId });
+      } else {
+        setPendingPlacements((prev) => ({ ...prev, [overId]: { letter, rackIndex: data.rackIndex! } }));
+      }
     } else if (source === 'board' && data.fromKey) {
       const fromTile = pendingPlacements[data.fromKey];
       if (!fromTile) return;
@@ -194,7 +226,15 @@ export function GameView() {
     }
   }
 
-  const handlePlayed = () => setPendingPlacements({});
+  const handlePlayed   = () => { setPendingPlacements({}); setBlankModalState(null); };
+  const handleRecycled = () => { setRecycleIndices([]); setIsRecycleOpen(false); };
+  const handleRecall   = () => { setPendingPlacements({}); setRecycleIndices([]); setIsRecycleOpen(false); setBlankModalState(null); };
+  const handleToggleRecycle = () => {
+    setIsRecycleOpen((prev) => {
+      if (prev) setRecycleIndices([]);
+      return !prev;
+    });
+  };
 
   if (!gameId) return null;
 
@@ -249,21 +289,46 @@ export function GameView() {
             <div className="-mx-6">
               <GameBoard board={gameState?.board} pendingPlacements={pendingPlacements} isValidPlay={isValidPlay} />
             </div>
-            <Rack tiles={myRack} rackOrder={rackOrder} placedIndices={placedRackIndices} />
+            {isRecycleOpen && (
+              <RecycleZone
+                tiles={myRack}
+                recycleIndices={recycleIndices}
+                onRemove={(i) => setRecycleIndices((prev) => prev.filter((x) => x !== i))}
+              />
+            )}
+            <Rack tiles={myRack} rackOrder={rackOrder} placedIndices={usedRackIndices} />
             <DragOverlay dropAnimation={null}>
-              {activeTileLetter && <FloatingTile letter={activeTileLetter} />}
+              {activeTileLetter && <FloatingTile letter={activeTileLetter} isBlank={activeTileIsBlank} />}
             </DragOverlay>
           </DndContext>
+          {blankModalState && (
+            <BlankTileModal
+              onSelect={(chosen) => {
+                setPendingPlacements((prev) => ({
+                  ...prev,
+                  [blankModalState.boardKey]: { letter: chosen, rackIndex: blankModalState.rackIndex, isBlank: true },
+                }));
+                setBlankModalState(null);
+              }}
+              onDismiss={() => setBlankModalState(null)}
+            />
+          )}
         </>
       )}
     </div>
     <GameToolbar
       gameId={gameId}
       pendingPlacements={pendingPlacements}
+      recycleIndices={recycleIndices}
+      myRack={myRack}
       isValidPlay={isValidPlay}
       isMyTurn={gameState?.turn === myUserId}
+      isGameActive={gameState?.status === 'active'}
+      isRecycleOpen={isRecycleOpen}
       onPlayed={handlePlayed}
-      onRecall={handlePlayed}
+      onRecycled={handleRecycled}
+      onRecall={handleRecall}
+      onToggleRecycle={handleToggleRecycle}
     />
     </>
   );
@@ -403,13 +468,49 @@ const TILE_VALUES: Record<string, number> = {
   U: 1, V: 4, W: 4, X: 8, Y: 4, Z: 10,
 };
 
-function FloatingTile({ letter }: { letter: string }) {
+function FloatingTile({ letter, isBlank }: { letter: string; isBlank?: boolean }) {
+  const isRawBlank = letter === '?';
   return (
     <div className="relative flex h-10 w-10 items-center justify-center rounded bg-amber-100 shadow-md border border-amber-300 select-none rotate-3 scale-110">
-      <span className="text-[32px] font-bold leading-none text-gray-900">{letter}</span>
-      <span className="absolute bottom-0.5 right-0.5 text-[8px] font-semibold leading-none text-gray-600">
-        {TILE_VALUES[letter] ?? 0}
+      <span className="text-[32px] font-bold leading-none text-gray-900">
+        {isRawBlank ? '' : letter.toUpperCase()}
       </span>
+      <span className="absolute bottom-0.5 right-0.5 text-[8px] font-semibold leading-none text-gray-600">
+        {isBlank || isRawBlank ? 0 : (TILE_VALUES[letter] ?? 0)}
+      </span>
+    </div>
+  );
+}
+
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+function BlankTileModal({ onSelect, onDismiss }: { onSelect: (letter: string) => void; onDismiss: () => void }) {
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900 space-y-4">
+        <h3 className="font-semibold text-gray-900 dark:text-gray-100">Choose a letter for your blank tile</h3>
+        <div className="grid grid-cols-7 gap-1.5">
+          {LETTERS.map((letter) => (
+            <button
+              key={letter}
+              type="button"
+              onClick={() => onSelect(letter)}
+              className="h-10 w-10 rounded bg-amber-100 border border-amber-300 text-sm font-bold text-gray-900 hover:bg-amber-200 active:bg-amber-300 dark:bg-amber-200 dark:border-amber-400 dark:text-gray-900"
+            >
+              {letter}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

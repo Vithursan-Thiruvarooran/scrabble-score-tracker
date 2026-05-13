@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 
 from db import get_db
-from models import GameCreate, GameOut, GameState
+from models import GameBase, GameOut, GameState
 from routes.auth import get_current_user
 from services.game_state import build_initial_state, get_game_state
 from services.room import active_game_rooms
@@ -40,7 +40,7 @@ async def _doc_to_game_out(game: dict, db) -> GameOut:
 
 
 @router.post("/create", response_model=GameOut, status_code=201)
-async def create_game(payload: GameCreate, current_user=Depends(get_current_user)):
+async def create_game(payload: GameBase, current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
 
     sids = socket_manager.get_sids(user_id)

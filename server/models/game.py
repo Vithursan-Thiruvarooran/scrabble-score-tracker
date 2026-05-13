@@ -12,10 +12,6 @@ class GameBase(BaseModel):
     timeIncrement: int
 
 
-class GameCreate(GameBase):
-    pass
-
-
 class TilePlacement(BaseModel):
     row: int
     col: int
