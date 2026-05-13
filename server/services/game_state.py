@@ -185,6 +185,7 @@ def build_initial_state(creator_id: str) -> dict:
         "turn": creator_id,
         "status": "waiting",
         "last_move": None,
+        "consecutive_passes": 0,
     }
 
 
@@ -378,6 +379,27 @@ def _validate_placement(
 
 
 # ---------------------------------------------------------------------------
+# Game-over helpers
+# ---------------------------------------------------------------------------
+
+def _finish_game(state: dict) -> None:
+    """Mark the game finished. Winner is the player with the highest score."""
+    state["status"] = "finished"
+    players: List[str] = state["players"]
+    scores: Dict = state["scores"]
+    winner = max(players, key=lambda p: scores.get(p, 0))
+    state["turn"] = winner
+
+
+def _check_game_over_after_place(state: dict, player_id: str) -> bool:
+    """Finish the game when the bag is empty and the active player's rack is empty."""
+    if state["tile_bag"] or state["racks"].get(player_id):
+        return False
+    _finish_game(state)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Public move handlers — each returns (updated_state_or_current, error_or_None)
 # ---------------------------------------------------------------------------
 
@@ -442,6 +464,7 @@ async def apply_place(
     state["board"] = board
     state["racks"][player_id] = rack
     state["tile_bag"] = bag
+    state["consecutive_passes"] = 0
     state["last_move"] = {
         "player": player_id,
         "move_type": "place",
@@ -449,7 +472,9 @@ async def apply_place(
         "score": score,
         "timestamp": datetime.utcnow().isoformat(),
     }
-    _advance_turn(state, player_id)
+
+    if not _check_game_over_after_place(state, player_id):
+        _advance_turn(state, player_id)
 
     await _persist(game_id, state)
     return state, None
@@ -467,6 +492,8 @@ async def apply_pass(
     if state.get("turn") != player_id:
         return state, "It is not your turn."
 
+    consecutive = state.get("consecutive_passes", 0) + 1
+    state["consecutive_passes"] = consecutive
     state["last_move"] = {
         "player": player_id,
         "move_type": "pass",
@@ -474,7 +501,12 @@ async def apply_pass(
         "score": 0,
         "timestamp": datetime.utcnow().isoformat(),
     }
-    _advance_turn(state, player_id)
+
+    # Three full rounds of consecutive passes (each player passes 3 times) ends the game.
+    if consecutive >= len(state["players"]) * 3:
+        _finish_game(state)
+    else:
+        _advance_turn(state, player_id)
 
     await _persist(game_id, state)
     return state, None
@@ -519,6 +551,7 @@ async def apply_recycle(
 
     state["racks"][player_id] = rack
     state["tile_bag"] = bag
+    state["consecutive_passes"] = 0
     state["last_move"] = {
         "player": player_id,
         "move_type": "recycle",
