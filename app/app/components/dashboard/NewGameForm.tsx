@@ -11,8 +11,13 @@ interface NewGameFormProps {
 
 export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewGameFormProps) {
   const [opponent, setOpponent] = useState('');
+  const [dictionary, setDictionary] = useState('TWL06');
+  const [boardType, setBoardType] = useState('standard');
+  const [turnTimer, setTurnTimer] = useState(false);
   const [duration, setDuration] = useState(25);
   const [timeIncrement, setTimeIncrement] = useState(0);
+  const [online, setOnline] = useState(true);
+  const [disputes, setDisputes] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -28,7 +33,16 @@ export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewG
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    onSubmit({ opponent, duration, timeIncrement });
+    onSubmit({
+      opponent,
+      dictionary,
+      board_type: boardType,
+      turn_timer: turnTimer,
+      duration: turnTimer ? duration : null,
+      timeIncrement: turnTimer ? timeIncrement : null,
+      online,
+      disputes,
+    });
   }
 
   return (
@@ -51,6 +65,7 @@ export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewG
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Opponent */}
           <div className="space-y-1">
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Opponent</label>
             <select
@@ -68,22 +83,73 @@ export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewG
             </select>
           </div>
 
+          {/* Dictionary + Board type */}
           <div className="grid grid-cols-2 gap-3">
-            <NumberField
-              label="Duration (min)"
-              value={duration}
-              onChange={setDuration}
-              min={1}
-              max={60}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Dictionary</label>
+              <select
+                value={dictionary}
+                onChange={(e) => setDictionary(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 transition"
+              >
+                <option value="TWL06">TWL06</option>
+                <option value="SOWPODS">SOWPODS</option>
+                <option value="OSPD5">OSPD5</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Board</label>
+              <select
+                value={boardType}
+                onChange={(e) => setBoardType(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 transition"
+              >
+                <option value="standard">Standard</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Toggles */}
+          <div className="space-y-2.5">
+            <Toggle
+              label="Online game"
+              description="Players connect remotely via the app"
+              checked={online}
+              onChange={setOnline}
             />
-            <NumberField
-              label="Increment (sec)"
-              value={timeIncrement}
-              onChange={setTimeIncrement}
-              min={0}
-              max={60}
+            <Toggle
+              label="Turn timer"
+              description="Each move is time-limited"
+              checked={turnTimer}
+              onChange={setTurnTimer}
+            />
+            <Toggle
+              label="Allow disputes"
+              description="Players can challenge words"
+              checked={disputes}
+              onChange={setDisputes}
             />
           </div>
+
+          {/* Duration + Increment — only shown when turn timer is on */}
+          {turnTimer && (
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField
+                label="Duration (min)"
+                value={duration}
+                onChange={setDuration}
+                min={1}
+                max={60}
+              />
+              <NumberField
+                label="Increment (sec)"
+                value={timeIncrement}
+                onChange={setTimeIncrement}
+                min={0}
+                max={60}
+              />
+            </div>
+          )}
 
           {error && (
             <p className="px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
@@ -111,6 +177,42 @@ export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewG
         </form>
       </div>
     </div>
+  );
+}
+
+function Toggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+      <div>
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-500">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative shrink-0 w-10 h-6 rounded-full transition-colors ${
+          checked ? 'bg-amber-500' : 'bg-gray-200 dark:bg-gray-700'
+        }`}
+      >
+        <span
+          className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+            checked ? 'translate-x-4' : 'translate-x-0'
+          }`}
+        />
+      </button>
+    </label>
   );
 }
 

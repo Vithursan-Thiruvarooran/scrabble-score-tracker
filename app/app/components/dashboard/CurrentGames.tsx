@@ -4,23 +4,27 @@ import type { Game } from '../../services/game';
 import { CurrentGameCard } from './CurrentGameCard';
 import { useAuth } from '../../context/AuthContext';
 
-export function CurrentGames() {
+interface CurrentGamesProps {
+  completed?: boolean;
+}
+
+export function CurrentGames({ completed }: CurrentGamesProps) {
   const { token } = useAuth();
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    gameService.getMyGames(token)
+    gameService.getMyGames(token, completed)
       .then(setGames)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load games.'))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, completed]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3 shrink-0">
-        Your games
+        {completed ? 'Past games' : 'Active games'}
       </h2>
 
       <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">

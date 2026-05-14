@@ -80,7 +80,7 @@ export function Rack({ tiles, rackOrder, placedIndices }: RackProps) {
       {/* <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
         Your tiles
       </h2> */}
-      <div className="flex gap-1.5 flex-wrap">
+      <div className="flex gap-1.5 flex-wrap justify-center">
         {tiles.length === 0 ? (
           <p className="text-sm text-gray-400 dark:text-gray-500 italic">No tiles</p>
         ) : (

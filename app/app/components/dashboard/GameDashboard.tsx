@@ -77,7 +77,10 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
         <div className="w-full max-w-sm flex flex-col flex-1 min-h-0 gap-4">
           <AddFriendCard />
           <NewGameCard disabled={busy !== null} onOpen={handleOpenForm} />
-          <CurrentGames />
+          <div className="flex flex-col flex-1 min-h-0 gap-4">
+            <CurrentGames completed={false} />
+            <CurrentGames completed={true} />
+          </div>
         </div>
       </main>
 

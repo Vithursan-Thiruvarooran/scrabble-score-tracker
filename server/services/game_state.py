@@ -151,6 +151,61 @@ def calculate_move_score(
     return total
 
 
+def _extract_words(
+    board: List[List[Optional[str]]],
+    new_tiles: List[Dict],
+) -> Tuple[str, List[str]]:
+    """Return (main_word, all_words) for a placement after the board is updated."""
+    if not new_tiles:
+        return "", []
+
+    rows = {t["row"] for t in new_tiles}
+    cols = {t["col"] for t in new_tiles}
+
+    is_horizontal = len(rows) == 1
+    is_vertical = len(cols) == 1
+
+    main_dirs: List[Tuple[int, int]] = []
+    if is_horizontal:
+        main_dirs.append((0, 1))
+    if is_vertical:
+        main_dirs.append((1, 0))
+
+    def cells_to_word(cells: List[Tuple[int, int]]) -> str:
+        return "".join((board[r][c] or "").upper() for r, c in cells)
+
+    words: List[str] = []
+    seen: set = set()
+    main_word = ""
+
+    for dr, dc in main_dirs:
+        r0, c0 = new_tiles[0]["row"], new_tiles[0]["col"]
+        main_cells = _word_cells(board, r0, c0, dr, dc)
+        if len(main_cells) > 1:
+            key = tuple(main_cells)
+            if key not in seen:
+                seen.add(key)
+                w = cells_to_word(main_cells)
+                if not main_word:
+                    main_word = w
+                words.append(w)
+
+        cdr, cdc = dc, dr
+        for t in new_tiles:
+            cross = _word_cells(board, t["row"], t["col"], cdr, cdc)
+            if len(cross) > 1:
+                key = tuple(cross)
+                if key not in seen:
+                    seen.add(key)
+                    words.append(cells_to_word(cross))
+
+    if not main_word:
+        t0 = new_tiles[0]
+        main_word = (board[t0["row"]][t0["col"]] or "").upper()
+
+    return main_word, words
+
+
 # ---------------------------------------------------------------------------
 
 TILE_DISTRIBUTION: List[str] = (
@@ -175,6 +230,7 @@ def _empty_board() -> List[List[Optional[str]]]:
 
 def build_initial_state(creator_id: str) -> dict:
     bag = _fresh_bag()
+    initial_bag = list(bag)
     rack, bag = bag[:7], bag[7:]
     return {
         "players": [creator_id],
@@ -184,7 +240,16 @@ def build_initial_state(creator_id: str) -> dict:
         "scores": {creator_id: 0},
         "turn": creator_id,
         "status": "waiting",
-        "last_move": None,
+        "game_moves": [{
+            "move_number": 0,
+            "move_type": "initial",
+            "player": None,
+            "tiles": [],
+            "recycled": [],
+            "score": 0,
+            "tile_bag": initial_bag,
+            "timestamp": datetime.utcnow().isoformat(),
+        }],
         "consecutive_passes": 0,
     }
 
@@ -267,10 +332,33 @@ async def _persist(game_id: str, state: dict) -> None:
     """Fast-write to Redis, then durably persist to MongoDB."""
     await cache_state(game_id, state)
     db = get_db()
-    await db.games.update_one(
-        {"_id": ObjectId(game_id)},
-        {"$set": {"game_state": state}},
-    )
+    fields: dict = {"game_state": state}
+    if state.get("status") == "finished":
+        game = await db.games.find_one({"_id": ObjectId(game_id)}, {"user": 1, "opponent": 1})
+        if game:
+            scores = state.get("scores", {})
+            winner_id = state.get("winner")
+            players: List[str] = state.get("players", [])
+            loser_id = next((p for p in players if p != winner_id), None) if winner_id else None
+            fields.update({
+                "completed": True,
+                "winner": winner_id,
+                "loser": loser_id,
+                "userScore": scores.get(game["user"], 0),
+                "opponentScore": scores.get(game["opponent"], 0),
+            })
+    await db.games.update_one({"_id": ObjectId(game_id)}, {"$set": fields})
+
+    moves = state.get("game_moves", [])
+    if moves:
+        last_move = moves[-1]
+        if last_move.get("move_type") != "initial":
+            move_doc = {"game_id": game_id, "user_id": last_move.get("player"), **last_move}
+            await db.moves.update_one(
+                {"game_id": game_id, "move_number": last_move["move_number"]},
+                {"$set": move_doc},
+                upsert=True,
+            )
 
 
 def _advance_turn(state: dict, player_id: str) -> None:
@@ -383,12 +471,13 @@ def _validate_placement(
 # ---------------------------------------------------------------------------
 
 def _finish_game(state: dict) -> None:
-    """Mark the game finished. Winner is the player with the highest score."""
+    """Mark the game finished. Sets winner to None on a tie."""
     state["status"] = "finished"
     players: List[str] = state["players"]
     scores: Dict = state["scores"]
-    winner = max(players, key=lambda p: scores.get(p, 0))
-    state["turn"] = winner
+    high = max(scores.get(p, 0) for p in players)
+    leaders = [p for p in players if scores.get(p, 0) == high]
+    state["winner"] = leaders[0] if len(leaders) == 1 else None
 
 
 def _check_game_over_after_place(state: dict, player_id: str) -> bool:
@@ -417,6 +506,7 @@ async def apply_place(
         return state, "It is not your turn."
 
     rack: List[str] = list(state["racks"].get(player_id, []))
+    rack_before: List[str] = list(rack)
     board: List[List[Optional[str]]] = state["board"]
 
     # Validate that the player has all required tiles (blanks must come from '?').
@@ -454,6 +544,7 @@ async def apply_place(
             rack.remove("?")
 
     score = calculate_move_score(board, tiles)
+    word, all_words = _extract_words(board, tiles)
 
     bag: List[str] = state["tile_bag"]
     draw = min(7 - len(rack), len(bag))
@@ -465,13 +556,19 @@ async def apply_place(
     state["racks"][player_id] = rack
     state["tile_bag"] = bag
     state["consecutive_passes"] = 0
-    state["last_move"] = {
-        "player": player_id,
+    state["game_moves"].append({
+        "move_number": len(state["game_moves"]),
         "move_type": "place",
+        "player": player_id,
         "tiles": tiles,
+        "recycled": [],
         "score": score,
+        "word": word,
+        "all_words": all_words,
+        "rack": rack_before,
+        "tile_bag": list(bag),
         "timestamp": datetime.utcnow().isoformat(),
-    }
+    })
 
     if not _check_game_over_after_place(state, player_id):
         _advance_turn(state, player_id)
@@ -494,13 +591,19 @@ async def apply_pass(
 
     consecutive = state.get("consecutive_passes", 0) + 1
     state["consecutive_passes"] = consecutive
-    state["last_move"] = {
-        "player": player_id,
+    state["game_moves"].append({
+        "move_number": len(state["game_moves"]),
         "move_type": "pass",
+        "player": player_id,
         "tiles": [],
+        "recycled": [],
         "score": 0,
+        "word": "",
+        "all_words": [],
+        "rack": list(state["racks"].get(player_id, [])),
+        "tile_bag": list(state["tile_bag"]),
         "timestamp": datetime.utcnow().isoformat(),
-    }
+    })
 
     # Three full rounds of consecutive passes (each player passes 3 times) ends the game.
     if consecutive >= len(state["players"]) * 3:
@@ -526,6 +629,7 @@ async def apply_recycle(
         return state, "It is not your turn."
 
     rack: List[str] = list(state["racks"].get(player_id, []))
+    rack_before: List[str] = list(rack)
     bag: List[str] = list(state["tile_bag"])
 
     if len(bag) < len(letters):
@@ -552,13 +656,19 @@ async def apply_recycle(
     state["racks"][player_id] = rack
     state["tile_bag"] = bag
     state["consecutive_passes"] = 0
-    state["last_move"] = {
-        "player": player_id,
+    state["game_moves"].append({
+        "move_number": len(state["game_moves"]),
         "move_type": "recycle",
+        "player": player_id,
         "tiles": [],
+        "recycled": letters,
         "score": 0,
+        "word": "",
+        "all_words": [],
+        "rack": rack_before,
+        "tile_bag": list(bag),
         "timestamp": datetime.utcnow().isoformat(),
-    }
+    })
     _advance_turn(state, player_id)
 
     await _persist(game_id, state)
@@ -581,15 +691,20 @@ async def apply_resign(
     winner = next((p for p in players if p != player_id), None)
 
     state["status"] = "finished"
-    if winner:
-        state["turn"] = winner
-    state["last_move"] = {
-        "player": player_id,
+    state["winner"] = winner
+    state["game_moves"].append({
+        "move_number": len(state["game_moves"]),
         "move_type": "resign",
+        "player": player_id,
         "tiles": [],
+        "recycled": [],
         "score": 0,
+        "word": "",
+        "all_words": [],
+        "rack": list(state["racks"].get(player_id, [])),
+        "tile_bag": list(state["tile_bag"]),
         "timestamp": datetime.utcnow().isoformat(),
-    }
+    })
 
     await _persist(game_id, state)
     return state, None

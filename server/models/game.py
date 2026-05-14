@@ -8,8 +8,13 @@ from models.user import UserOut
 
 class GameBase(BaseModel):
     opponent: str
-    duration: int
-    timeIncrement: int
+    dictionary: str = "TWL06"
+    board_type: str = "standard"
+    turn_timer: bool = False
+    duration: Optional[int] = None
+    timeIncrement: Optional[int] = None
+    online: bool = True
+    disputes: bool = False
 
 
 class TilePlacement(BaseModel):
@@ -18,10 +23,17 @@ class TilePlacement(BaseModel):
     letter: str
 
 
-class Move(BaseModel):
-    player: str
-    tiles: List[TilePlacement]
-    score: int
+class GameMove(BaseModel):
+    move_number: int
+    move_type: str
+    player: Optional[str] = None
+    tiles: List[TilePlacement] = []
+    recycled: List[str] = []
+    score: int = 0
+    word: str = ""
+    all_words: List[str] = []
+    rack: List[str] = []
+    tile_bag: List[str] = []
     timestamp: str
 
 
@@ -34,15 +46,21 @@ class GameState(BaseModel):
     scores: Dict[str, int]
     turn: str
     status: str
-    last_move: Optional[Move] = None
+    winner: Optional[str] = None
+    game_moves: List[GameMove] = []
 
 
 class GameOut(BaseModel):
     id: str
     user: UserOut
     opponent: UserOut
-    duration: int
-    timeIncrement: int
+    dictionary: str = "TWL06"
+    board_type: str = "standard"
+    turn_timer: bool = False
+    duration: Optional[int] = None
+    timeIncrement: Optional[int] = None
+    online: bool = True
+    disputes: bool = False
     completed: bool = False
     winner: Optional[str] = None
     loser: Optional[str] = None

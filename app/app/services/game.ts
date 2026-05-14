@@ -10,16 +10,26 @@ export interface GameUser {
 
 export interface CreateGameParams {
   opponent: string;
-  duration: number;
-  timeIncrement: number;
+  dictionary: string;
+  board_type: string;
+  turn_timer: boolean;
+  duration: number | null;
+  timeIncrement: number | null;
+  online: boolean;
+  disputes: boolean;
 }
 
 export interface Game {
   id: string;
   user: GameUser;
   opponent: GameUser;
-  duration: number;
-  timeIncrement: number;
+  dictionary: string;
+  board_type: string;
+  turn_timer: boolean;
+  duration: number | null;
+  timeIncrement: number | null;
+  online: boolean;
+  disputes: boolean;
   completed: boolean;
   winner: string | null;
   loser: string | null;
@@ -85,8 +95,9 @@ export async function createGame(params: CreateGameParams, token: string): Promi
   return { room: data.id };
 }
 
-export function getMyGames(token: string): Promise<Game[]> {
-  return apiFetch<Game[]>('/game/mine', {
+export function getMyGames(token: string, completed?: boolean): Promise<Game[]> {
+  const qs = completed !== undefined ? `?completed=${completed}` : '';
+  return apiFetch<Game[]>(`/game/mine${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
@@ -97,10 +108,17 @@ export function getGame(gameId: string, token: string): Promise<Game> {
   });
 }
 
-export interface Move {
-  player: string;
-  tiles: { row: number; col: number; letter: string }[];
+export interface GameMove {
+  move_number: number;
+  move_type: 'initial' | 'place' | 'pass' | 'recycle' | 'resign';
+  player: string | null;
+  tiles: { row: number; col: number; letter: string; is_blank?: boolean }[];
+  recycled: string[];
   score: number;
+  word: string;
+  all_words: string[];
+  rack: string[];
+  tile_bag: string[];
   timestamp: string;
 }
 
@@ -113,7 +131,8 @@ export interface GameState {
   scores: Record<string, number>;
   turn: string;
   status: 'waiting' | 'active' | 'finished';
-  last_move: Move | null;
+  winner: string | null;
+  game_moves: GameMove[];
 }
 
 export function getGameState(gameId: string, token: string): Promise<GameState> {

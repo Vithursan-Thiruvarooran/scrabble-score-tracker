@@ -196,7 +196,7 @@ export function GameBoard({ board, pendingPlacements, isValidPlay = false }: Gam
           ))
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 px-6">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 px-3 py-1">
         <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-600" /> Triple Word</span>
         <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-300" /> Double Word</span>
         <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-700" /> Triple Letter</span>

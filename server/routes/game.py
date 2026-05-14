@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,8 +27,13 @@ async def _doc_to_game_out(game: dict, db) -> GameOut:
         id=str(game["_id"]),
         user=await _fetch_user_out(db, game["user"]),
         opponent=await _fetch_user_out(db, game["opponent"]),
-        duration=game["duration"],
-        timeIncrement=game["timeIncrement"],
+        dictionary=game.get("dictionary", "TWL06"),
+        board_type=game.get("board_type", "standard"),
+        turn_timer=game.get("turn_timer", False),
+        duration=game.get("duration"),
+        timeIncrement=game.get("timeIncrement"),
+        online=game.get("online", True),
+        disputes=game.get("disputes", False),
         completed=game.get("completed", False),
         winner=game.get("winner"),
         loser=game.get("loser"),
@@ -50,8 +55,13 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
     db = get_db()
     result = await db.games.insert_one({
         "opponent": payload.opponent,
+        "dictionary": payload.dictionary,
+        "board_type": payload.board_type,
+        "turn_timer": payload.turn_timer,
         "duration": payload.duration,
         "timeIncrement": payload.timeIncrement,
+        "online": payload.online,
+        "disputes": payload.disputes,
         "user": user_id,
         "completed": False,
         "winner": None,
@@ -76,10 +86,13 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
 
 
 @router.get("/mine", response_model=List[GameOut])
-async def get_my_games(current_user=Depends(get_current_user)):
+async def get_my_games(completed: Optional[bool] = None, current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
     db = get_db()
-    games = await db.games.find({"$or": [{"user": user_id}, {"opponent": user_id}]}).to_list(length=None)
+    query: dict = {"$or": [{"user": user_id}, {"opponent": user_id}]}
+    if completed is not None:
+        query["completed"] = completed
+    games = await db.games.find(query).sort("date", -1).to_list(length=None)
     return [await _doc_to_game_out(game, db) for game in games]
 
 
