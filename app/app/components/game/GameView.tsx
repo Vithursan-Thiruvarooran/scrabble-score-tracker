@@ -405,7 +405,8 @@ export function GameView() {
         onToggleRecycle={handleToggleRecycle}
       />
     </div>
-    </>
+
+</>
   );
 }
 

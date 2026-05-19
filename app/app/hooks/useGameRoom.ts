@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { socket } from '../socket';
 import { useAuth } from '../context/AuthContext';
-import { useSocketEvent } from './useSocketEvent';
+import { useNotifications } from '../context/NotificationContext';
 import * as gameService from '../services/game';
 import type { Game, GameState } from '../services/game';
 
 export function useGameRoom(gameId: string | undefined) {
   const { token } = useAuth();
   const navigate = useNavigate();
+  const { notify } = useNotifications();
 
   const [joinPending, setJoinPending] = useState(true);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -16,6 +17,8 @@ export function useGameRoom(gameId: string | undefined) {
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const gameIdRef = useRef(gameId);
+  gameIdRef.current = gameId;
 
   useEffect(() => {
     if (!gameId) {
@@ -66,7 +69,21 @@ export function useGameRoom(gameId: string | undefined) {
     }
   }, [joinPending, joinError, gameId, token]);
 
-  useSocketEvent<GameState>('game_state', setGameState);
+  useEffect(() => {
+    function onGameState(data: GameState) {
+      if (data.game_id === gameIdRef.current) {
+        setGameState(data);
+      } else {
+        notify({
+          message: 'Opponent moved',
+          action: { label: 'View', to: `/game/${data.game_id}` },
+          key: `game-move-${data.game_id}`,
+        });
+      }
+    }
+    socket.on('game_state', onGameState);
+    return () => { socket.off('game_state', onGameState); };
+  }, [notify]);
 
   const leaveGame = useCallback(() => {
     if (!gameId) {
