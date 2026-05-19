@@ -1,5 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import type { CreateGameParams, GameUser } from '../../services/game';
+import type { CreateGameParams } from '../../services/game';
+import type { GameUser } from '../../services/user';
 
 interface NewGameFormProps {
   loading: boolean;

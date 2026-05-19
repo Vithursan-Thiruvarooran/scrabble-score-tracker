@@ -25,6 +25,9 @@ async def lifespan(app: FastAPI):
 
     db = get_db()
     await db.users.create_index("email", unique=True)
+    await db.moves.create_index([("game_id", 1), ("move_number", 1)], unique=True)
+    await db.games.create_index([("user", 1), ("completed", 1)])
+    await db.games.create_index([("opponent", 1), ("completed", 1)])
 
     # Restore in-memory room set from DB so active games survive server restarts
     active = await db.games.find({"completed": False}, {"_id": 1}).to_list(length=None)

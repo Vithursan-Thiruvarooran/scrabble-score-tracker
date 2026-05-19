@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import * as gameService from '../../services/game';
-import type { CreateGameParams, GameUser } from '../../services/game';
+import * as userService from '../../services/user';
+import type { CreateGameParams } from '../../services/game';
+import type { GameUser } from '../../services/user';
 import { AddFriendCard } from './AddFriendCard';
 import { NewGameCard } from './NewGameCard';
 import { NewGameForm } from './NewGameForm';
@@ -36,7 +38,7 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
   async function handleOpenForm() {
     setShowForm(true);
     try {
-      const data = await gameService.getFriends(token);
+      const data = await userService.getFriends(token);
       setFriends(data);
     } catch {
       setFriends([]);

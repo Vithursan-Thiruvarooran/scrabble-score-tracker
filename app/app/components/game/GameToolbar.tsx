@@ -43,20 +43,30 @@ export function GameToolbar({
     setPendingMove(moveType);
     setError(null);
 
-    function onOk() {
+    function cleanup() {
+      socket.off('play_move_ok', onOk);
       socket.off('play_error', onErr);
       setPendingMove(null);
+    }
+    function onOk() {
+      cleanup();
       onSuccess();
     }
     function onErr(payload: { message?: string }) {
-      socket.off('play_move_ok', onOk);
-      setPendingMove(null);
+      cleanup();
       setError(payload.message ?? 'Move was rejected.');
     }
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      setError('No response from server. Please try again.');
+    }, 10_000);
 
     socket.once('play_move_ok', onOk);
     socket.once('play_error', onErr);
     socket.emit('play_move', { game_id: gameId, move_type: moveType, ...extra });
+
+    return () => clearTimeout(timeout);
   }
 
   function handlePlay() {

@@ -67,4 +67,3 @@ class GameOut(BaseModel):
     userScore: int = 0
     opponentScore: int = 0
     date: Optional[datetime] = None
-    time: Optional[datetime] = None

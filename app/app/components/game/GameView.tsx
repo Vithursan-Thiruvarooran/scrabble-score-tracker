@@ -93,10 +93,10 @@ function validatePlay(
 
 export function GameView() {
   const { gameId } = useParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { joinPending, joinError, leavePending, leaveError, game, gameState, leaveGame } = useGameRoom(gameId);
 
-  const myUserId = token ? token.split(':')[0] : null;
+  const myUserId = user?.id ?? null;
   const myRack = myUserId && gameState ? (gameState.racks[myUserId] ?? []) : [];
 
   const [pendingPlacements, setPendingPlacements] = useState<PendingPlacements>({});
@@ -502,10 +502,11 @@ function ScoreBoard({ state, game }: { state: GameState; game: Game | null }) {
 
 
 function GameInfo({ game }: { game: Game }) {
-  const formattedDate = new Date(game.date).toLocaleDateString(undefined, {
+  const gameDate = new Date(game.date);
+  const formattedDate = gameDate.toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
   });
-  const formattedTime = new Date(game.time).toLocaleTimeString(undefined, {
+  const formattedTime = gameDate.toLocaleTimeString(undefined, {
     hour: '2-digit', minute: '2-digit',
   });
 

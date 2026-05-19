@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import * as gameService from '../../services/game';
-import type { FriendRequest, GameUser } from '../../services/game';
+import * as userService from '../../services/user';
+import type { FriendRequest, GameUser } from '../../services/user';
 import { useAuth } from '../../context/AuthContext';
 
 export function AddFriendCard() {
@@ -14,8 +14,8 @@ export function AddFriendCard() {
   const [accepting, setAccepting] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    gameService.getAllUsers(token).then(setAllUsers).catch(() => {});
-    gameService.getFriendRequests(token).then(setRequests).catch(() => {});
+    userService.getAllUsers(token).then(setAllUsers).catch(() => {});
+    userService.getFriendRequests(token).then(setRequests).catch(() => {});
   }, [token]);
 
   const filtered = query.trim()
@@ -32,7 +32,7 @@ export function AddFriendCard() {
   async function handleAdd(user: GameUser) {
     setSent((prev) => ({ ...prev, [user.id]: 'sending' }));
     try {
-      await gameService.addFriend(user.id, token);
+      await userService.addFriend(user.id, token);
       setSent((prev) => ({ ...prev, [user.id]: 'sent' }));
     } catch {
       setSent((prev) => ({ ...prev, [user.id]: 'error' }));
@@ -42,7 +42,7 @@ export function AddFriendCard() {
   async function handleAccept(req: FriendRequest) {
     setAccepting((prev) => ({ ...prev, [req.id]: true }));
     try {
-      await gameService.acceptFriend(req.id, token);
+      await userService.acceptFriend(req.id, token);
       setRequests((prev) => prev.filter((r) => r.id !== req.id));
     } catch {
       setAccepting((prev) => ({ ...prev, [req.id]: false }));
