@@ -35,14 +35,16 @@ function RackSlot({ letter, originalIndex, slotIndex, isPlaced }: RackSlotProps)
       ref={setRef}
       {...listeners}
       {...attributes}
-      className={`relative flex h-10 w-10 items-center justify-center rounded
-        bg-amber-100 dark:bg-amber-200 shadow-sm border
+      className={`relative flex h-11 w-11 items-center justify-center rounded-md
+        bg-amber-50 dark:bg-amber-100
+        shadow-[0_2px_0_0_rgba(160,120,0,0.35),0_1px_3px_rgba(0,0,0,0.12)]
+        border
         select-none touch-none transition-all
-        ${isOver && !isDragging ? 'border-blue-400 ring-2 ring-blue-300 scale-110' : 'border-amber-300 dark:border-amber-400'}
+        ${isOver && !isDragging ? 'border-blue-400 ring-2 ring-blue-300 scale-110' : 'border-amber-200 dark:border-amber-300'}
         ${isDragging || isPlaced ? 'opacity-30 cursor-default' : 'cursor-grab active:cursor-grabbing'}
       `}
     >
-      <span className="text-[32px] font-bold leading-none text-gray-900">
+      <span className="text-[28px] font-bold leading-none text-gray-900">
         {isBlank ? '' : letter}
       </span>
       {!isBlank && (
@@ -66,7 +68,7 @@ export function Rack({ tiles, rackOrder, placedIndices }: RackProps) {
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-xl border p-4 space-y-3 transition-colors ${
+      className={`rounded-xl border p-3 transition-colors ${
         isOver
           ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
           : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'

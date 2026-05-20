@@ -45,12 +45,12 @@ function getSquareType(row: number, col: number): SquareType {
 }
 
 const EMPTY_SQUARE_CLASSES: Record<SquareType, string> = {
-  TW: 'bg-red-600',
-  DW: 'bg-rose-300',
-  TL: 'bg-blue-700',
-  DL: 'bg-sky-300',
-  center: 'bg-rose-300',
-  normal: 'bg-green-800',
+  TW: 'bg-red-600 dark:bg-red-700',
+  DW: 'bg-pink-300 dark:bg-pink-700',
+  TL: 'bg-blue-600 dark:bg-blue-800',
+  DL: 'bg-sky-300 dark:bg-sky-700',
+  center: 'bg-pink-300 dark:bg-pink-700',
+  normal: 'bg-emerald-700 dark:bg-emerald-900',
 };
 
 const SQUARE_LABELS: Record<SquareType, string> = {
@@ -191,11 +191,11 @@ export function GameBoard({ board, pendingPlacements, isValidPlay = false }: Gam
           ))
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 px-3 py-1">
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-600" /> Triple Word</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-300" /> Double Word</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-700" /> Triple Letter</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-300" /> Double Letter</span>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 px-3 py-1">
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-600 dark:bg-red-700" /> Triple Word</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-pink-300 dark:bg-pink-700" /> Double Word</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-600 dark:bg-blue-800" /> Triple Letter</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-300 dark:bg-sky-700" /> Double Letter</span>
       </div>
     </div>
   );

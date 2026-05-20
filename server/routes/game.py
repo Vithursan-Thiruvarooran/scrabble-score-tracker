@@ -5,7 +5,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
 from db import get_db
-from models import GameBase, GameMove, GameOut, GameState
+from models import GameBase, GameMove, GameOut, GameState, GameStateSummary
 from routes.auth import get_current_user
 from services.game_state import build_initial_state, get_game_state
 from services.room import active_game_rooms
@@ -22,11 +22,29 @@ async def _fetch_users_by_ids(db, user_ids: List[str]) -> Dict[str, dict]:
     return {str(doc["_id"]): doc for doc in docs}
 
 
+def _build_game_state_summary(game_state_doc: dict) -> GameStateSummary:
+    moves = game_state_doc.get("game_moves", [])
+    last_non_initial = next(
+        (m for m in reversed(moves) if m.get("move_type") != "initial"),
+        None,
+    )
+    return GameStateSummary(
+        turn=game_state_doc.get("turn"),
+        status=game_state_doc.get("status", "waiting"),
+        last_move_at=last_non_initial["timestamp"] if last_non_initial else None,
+        scores=game_state_doc.get("scores", {}),
+    )
+
+
 def _build_game_out(game: dict, user_cache: Dict[str, dict]) -> GameOut:
     user_doc = user_cache.get(game["user"])
     opponent_doc = user_cache.get(game["opponent"])
     if not user_doc or not opponent_doc:
         raise HTTPException(status_code=404, detail="Game participant not found")
+
+    game_state_doc = game.get("game_state")
+    game_state_summary = _build_game_state_summary(game_state_doc) if game_state_doc else None
+
     return GameOut(
         id=str(game["_id"]),
         user=user_doc_to_out(user_doc),
@@ -44,6 +62,7 @@ def _build_game_out(game: dict, user_cache: Dict[str, dict]) -> GameOut:
         userScore=game.get("userScore", 0),
         opponentScore=game.get("opponentScore", 0),
         date=game.get("date"),
+        game_state=game_state_summary,
     )
 
 

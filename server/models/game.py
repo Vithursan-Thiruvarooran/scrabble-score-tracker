@@ -50,6 +50,13 @@ class GameState(BaseModel):
     game_moves: List[GameMove] = []
 
 
+class GameStateSummary(BaseModel):
+    turn: Optional[str] = None
+    status: str = "waiting"
+    last_move_at: Optional[str] = None
+    scores: Dict[str, int] = {}
+
+
 class GameOut(BaseModel):
     id: str
     user: UserOut
@@ -67,3 +74,4 @@ class GameOut(BaseModel):
     userScore: int = 0
     opponentScore: int = 0
     date: Optional[datetime] = None
+    game_state: Optional[GameStateSummary] = None

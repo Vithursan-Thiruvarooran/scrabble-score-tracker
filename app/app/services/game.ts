@@ -14,6 +14,13 @@ export interface CreateGameParams {
   disputes: boolean;
 }
 
+export interface GameStateSummary {
+  turn: string | null;
+  status: 'waiting' | 'active' | 'finished';
+  last_move_at: string | null;
+  scores: Record<string, number>;
+}
+
 export interface Game {
   id: string;
   user: GameUser;
@@ -31,6 +38,7 @@ export interface Game {
   userScore: number;
   opponentScore: number;
   date: string;
+  game_state: GameStateSummary | null;
 }
 
 export interface GameMove {

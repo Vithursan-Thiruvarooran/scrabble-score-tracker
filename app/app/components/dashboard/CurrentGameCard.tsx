@@ -3,58 +3,94 @@ import type { Game } from '../../services/game';
 
 interface CurrentGameCardProps {
   game: Game;
+  currentUserId: string;
 }
 
-export function CurrentGameCard({ game }: CurrentGameCardProps) {
-  const date = new Date(game.date).toLocaleDateString(undefined, {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
+
+export function CurrentGameCard({ game, currentUserId }: CurrentGameCardProps) {
+  const iAmUser = game.user.id === currentUserId;
+  const me = iAmUser ? game.user : game.opponent;
+  const them = iAmUser ? game.opponent : game.user;
+
+  const gs = game.game_state;
+  const myScore = gs?.scores[me.id] ?? (iAmUser ? game.userScore : game.opponentScore);
+  const theirScore = gs?.scores[them.id] ?? (iAmUser ? game.opponentScore : game.userScore);
+
+  const isActive = !game.completed && gs?.status === 'active';
+  const isMyTurn = isActive && gs?.turn === me.id;
+
+  const iWon = game.completed && game.winner === me.id;
+  const theyWon = game.completed && game.winner === them.id;
+  const showScores = isActive || game.completed;
 
   return (
     <Link
       to={`/game/${game.id}`}
-      className="block bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-2 hover:border-amber-300 dark:hover:border-amber-700 hover:shadow-sm transition-all"
+      className="group flex items-center gap-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 hover:border-amber-300 dark:hover:border-amber-600 hover:shadow-sm transition-all duration-150"
     >
-      <div className="flex items-center justify-between gap-3">
-        {game.completed ? (
-          <span className="text-xs font-medium text-green-600 dark:text-green-400 shrink-0">
-            Completed
+      {/* Status dot */}
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+        game.completed
+          ? 'bg-green-500'
+          : gs?.status === 'waiting'
+          ? 'bg-gray-400 dark:bg-gray-500'
+          : 'bg-blue-500 animate-pulse'
+      }`} />
+
+      {/* My name */}
+      <span className={`flex-1 min-w-0 text-sm font-semibold truncate ${
+        iWon ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'
+      }`}>
+        {me.firstname}
+      </span>
+
+      {/* Score matchup */}
+      {showScores ? (
+        <div className="flex items-center gap-1.5 shrink-0 tabular-nums">
+          <span className={`text-sm font-black ${
+            iWon ? 'text-amber-500 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'
+          }`}>
+            {myScore}
           </span>
-        ) : (
-          <span className="flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-            Live
+          <span className={`text-xs font-bold ${
+            isActive
+              ? isMyTurn
+                ? 'text-amber-400 dark:text-amber-500'
+                : 'text-gray-300 dark:text-gray-600'
+              : 'text-gray-300 dark:text-gray-600'
+          }`}>
+            {isActive ? (isMyTurn ? '←' : '→') : '·'}
           </span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <div className="flex-1 min-w-0">
-          <p className={`text-sm font-semibold truncate ${game.completed && game.winner === game.user.id ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'}`}>
-            {game.user.firstname} {game.user.lastname}
-          </p>
-          {game.completed && (
-            <p className="text-lg font-bold tabular-nums text-gray-800 dark:text-gray-200 leading-tight">
-              {game.userScore}
-            </p>
-          )}
+          <span className={`text-sm font-black ${
+            theyWon ? 'text-amber-500 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'
+          }`}>
+            {theirScore}
+          </span>
         </div>
+      ) : (
+        <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">waiting…</span>
+      )}
 
-        <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 shrink-0">vs</span>
+      {/* Their name */}
+      <span className={`flex-1 min-w-0 text-sm font-semibold truncate text-right ${
+        theyWon ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'
+      }`}>
+        {them.firstname}
+      </span>
 
-        <div className="flex-1 min-w-0 text-right">
-          <p className={`text-sm font-semibold truncate ${game.completed && game.winner === game.opponent.id ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'}`}>
-            {game.opponent.firstname} {game.opponent.lastname}
-          </p>
-          {game.completed && (
-            <p className="text-lg font-bold tabular-nums text-gray-800 dark:text-gray-200 leading-tight">
-              {game.opponentScore}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <p className="text-xs text-gray-400 dark:text-gray-500">{date}</p>
+      {/* Time since last move */}
+      <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 w-6 text-right tabular-nums">
+        {gs?.last_move_at ? timeAgo(gs.last_move_at) : ''}
+      </span>
     </Link>
   );
 }

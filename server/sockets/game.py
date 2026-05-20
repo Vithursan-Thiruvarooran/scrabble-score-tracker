@@ -103,6 +103,30 @@ async def leaveGame(sid, data):
     await sio.emit("left_game", {"room": game_id}, to=sid)
 
 
+@sio.event
+async def subscribe_game(sid, data):
+    """Join a socket room for passive real-time updates without modifying game state."""
+    if not await _require_auth(sid, "subscribe_error"):
+        return
+    if not isinstance(data, dict):
+        return
+    game_id = data.get("game_id", "")
+    if isinstance(game_id, str) and game_id and game_id in active_game_rooms:
+        await sio.enter_room(sid, game_id)
+        logger.info("subscribe_game: room=%s sid=%s", game_id, sid)
+
+
+@sio.event
+async def unsubscribe_game(sid, data):
+    """Leave a socket room previously joined via subscribe_game."""
+    if not isinstance(data, dict):
+        return
+    game_id = data.get("game_id", "")
+    if isinstance(game_id, str) and game_id:
+        await sio.leave_room(sid, game_id)
+        logger.info("unsubscribe_game: room=%s sid=%s", game_id, sid)
+
+
 # Real-time move flow:
 #   Client → socket.emit("play_move", { game_id, move_type, ... })
 #           ↓

@@ -103,11 +103,11 @@ export function GameToolbar({
   }
 
   return (
-    <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+    <div className="shrink-0 border-t border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-950 pb-safe">
       {error && (
         <p className="px-4 pt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
-      <div className="flex items-stretch gap-2 px-4 py-[15px]">
+      <div className="flex items-stretch gap-2 px-4 py-3">
 
         {/* Secondary actions — icon above label, equal width */}
         <div className="flex gap-2">
@@ -117,7 +117,7 @@ export function GameToolbar({
             type="button"
             onClick={onRecall}
             disabled={isBusy || !hasStagedTiles}
-            className="flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -131,7 +131,7 @@ export function GameToolbar({
             type="button"
             onClick={handleExchangeClick}
             disabled={exchangeDisabled}
-            className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl border transition disabled:opacity-30 disabled:cursor-not-allowed ${
+            className={`flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border transition disabled:opacity-30 disabled:cursor-not-allowed ${
               isRecycleOpen
                 ? 'border-orange-500 bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700'
                 : 'border-orange-300 bg-white text-orange-500 hover:bg-orange-50 active:bg-orange-100 dark:border-orange-700 dark:bg-gray-800 dark:text-orange-400 dark:hover:bg-orange-950/30'
@@ -159,7 +159,7 @@ export function GameToolbar({
             type="button"
             onClick={handlePass}
             disabled={!canAct}
-            className="flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="5 4 15 12 5 20 5 4"/>

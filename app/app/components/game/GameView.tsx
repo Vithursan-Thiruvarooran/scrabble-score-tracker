@@ -9,7 +9,7 @@ import {
 import { SocketIndicator } from '../SocketIndicator';
 import { useGameRoom } from '../../hooks/useGameRoom';
 import { Link } from 'react-router';
-import type { Game, GameState } from '../../services/game';
+import type { GameState } from '../../services/game';
 import { GameBoard, type PendingPlacements } from './GameBoard';
 import { Rack } from './Rack';
 import { RecycleZone } from './RecycleZone';
@@ -93,7 +93,7 @@ function validatePlay(
 
 export function GameView() {
   const { gameId } = useParams();
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const { joinPending, joinError, leavePending, leaveError, game, gameState, leaveGame } = useGameRoom(gameId);
 
   const myUserId = user?.id ?? null;
@@ -255,113 +255,152 @@ export function GameView() {
 
   if (!gameId) return null;
 
+  const players = gameState?.players ?? [];
+  const [p1, p2] = myUserId && players[1] === myUserId
+    ? [players[1], players[0]]
+    : players;
+  const isFinished = gameState?.status === 'finished';
+
+  function getLabel(userId: string) {
+    if (!game) return `#${userId.slice(-4)}`;
+    if (game.user.id === userId) return game.user.firstname;
+    if (game.opponent.id === userId) return game.opponent.firstname;
+    return `#${userId.slice(-4)}`;
+  }
+
   return (
     <>
-    {showResignDialog && (
-      <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
-        <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900 space-y-4">
-          <h3 className="font-semibold text-gray-900 dark:text-gray-100">Resign game?</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            This will end the game immediately and your opponent will win.
-          </p>
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setShowResignDialog(false)}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleResign}
-              disabled={resignPending}
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 active:bg-red-800 disabled:opacity-50"
-            >
-              {resignPending ? 'Resigning…' : 'Resign'}
-            </button>
+      {showResignDialog && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900 space-y-4">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">Resign game?</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              This will end the game and your opponent wins.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowResignDialog(false)}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResign}
+                disabled={resignPending}
+                className="rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-600 active:bg-red-700 disabled:opacity-50"
+              >
+                {resignPending ? 'Resigning…' : 'Resign'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
-    <div className="h-dvh flex flex-col overflow-hidden">
-      <SocketIndicator />
-      <header className="shrink-0 flex items-center justify-between px-4 py-3">
-        <Link
-          to="/"
-          className="text-sm font-medium text-gray-600 underline-offset-4 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
-        >
-          ← Home
-        </Link>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((prev) => !prev)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            aria-label="Menu"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <rect y="2" width="16" height="1.5" rx="0.75" />
-              <rect y="7.25" width="16" height="1.5" rx="0.75" />
-              <rect y="12.5" width="16" height="1.5" rx="0.75" />
-            </svg>
-          </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); leaveGame(); }}
-                  disabled={leavePending || joinPending || Boolean(joinError)}
-                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                >
-                  {leavePending ? 'Leaving…' : 'Leave game'}
-                </button>
-                {isGameActive && (
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); setShowResignDialog(true); }}
-                    className="w-full border-t border-gray-100 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 dark:border-gray-700 dark:text-red-400 dark:hover:bg-red-950/30"
-                  >
-                    Resign
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </header>
-
-      {leaveError && (
-        <p className="px-4 text-sm text-red-600 dark:text-red-400">{leaveError}</p>
       )}
 
-      {joinPending && (
-        <p className="px-4 text-sm text-gray-600 dark:text-gray-400">Joining room…</p>
-      )}
+      <div className="h-dvh flex flex-col overflow-hidden bg-white dark:bg-gray-950">
+        <SocketIndicator />
 
-      {joinError && !joinPending && (
-        <div className="mx-4 space-y-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/40">
-          <p className="text-sm text-red-800 dark:text-red-200">{joinError}</p>
+        {/* Compact header: back nav + integrated scores + menu */}
+        <header className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-950">
           <Link
             to="/"
-            className="inline-block text-sm font-medium text-red-900 underline dark:text-red-100"
+            className="shrink-0 flex items-center justify-center w-10 h-10 -ml-1 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
           >
-            Back to home
+            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clipRule="evenodd" />
+            </svg>
           </Link>
-        </div>
-      )}
 
-      {!joinPending && !joinError && (
-        <>
-          {gameState && <ScoreBoard state={gameState} game={game} />}
+          {gameState && p1 && p2 ? (
+            <>
+              <PlayerScoreChip id={p1} state={gameState} getLabel={getLabel} align="left" />
+
+              <div className="shrink-0 flex flex-col items-center gap-0.5 px-1">
+                {isFinished ? (
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-amber-500 dark:text-amber-400">Final</span>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 text-gray-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                    </svg>
+                    <span className="text-xs font-bold tabular-nums leading-none text-gray-500 dark:text-gray-400">
+                      {gameState.tile_bag.length}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <PlayerScoreChip id={p2} state={gameState} getLabel={getLabel} align="right" />
+            </>
+          ) : (
+            <div className="flex-1" />
+          )}
+
+          <div className="shrink-0 relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+              aria-label="Menu"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <rect y="2" width="16" height="1.5" rx="0.75" />
+                <rect y="7.25" width="16" height="1.5" rx="0.75" />
+                <rect y="12.5" width="16" height="1.5" rx="0.75" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); leaveGame(); }}
+                    disabled={leavePending || joinPending || Boolean(joinError)}
+                    className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    {leavePending ? 'Leaving…' : 'Leave game'}
+                  </button>
+                  {isGameActive && (
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); setShowResignDialog(true); }}
+                      className="w-full border-t border-gray-100 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:border-gray-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                    >
+                      Resign
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </header>
+
+        {leaveError && (
+          <p className="px-4 py-2 text-sm text-red-600 dark:text-red-400">{leaveError}</p>
+        )}
+
+        {joinPending && (
+          <p className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">Joining room…</p>
+        )}
+
+        {joinError && !joinPending && (
+          <div className="mx-4 mt-3 space-y-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/40">
+            <p className="text-sm text-red-800 dark:text-red-200">{joinError}</p>
+            <Link to="/" className="inline-block text-sm font-medium text-red-900 underline dark:text-red-100">
+              Back to home
+            </Link>
+          </div>
+        )}
+
+        {!joinPending && !joinError && (
           <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col justify-center">
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col justify-center px-1.5 py-1">
               <GameBoard board={gameState?.board} pendingPlacements={pendingPlacements} isValidPlay={isValidPlay} />
             </div>
             {isRecycleOpen && (
-              <div className="shrink-0 px-3 pt-2">
+              <div className="shrink-0 px-3 pt-1">
                 <RecycleZone
                   tiles={myRack}
                   recycleIndices={recycleIndices}
@@ -376,214 +415,70 @@ export function GameView() {
               {activeTileLetter && <FloatingTile letter={activeTileLetter} isBlank={activeTileIsBlank} />}
             </DragOverlay>
           </DndContext>
-          {blankModalState && (
-            <BlankTileModal
-              onSelect={(chosen) => {
-                setPendingPlacements((prev) => ({
-                  ...prev,
-                  [blankModalState.boardKey]: { letter: chosen, rackIndex: blankModalState.rackIndex, isBlank: true },
-                }));
-                setBlankModalState(null);
-              }}
-              onDismiss={() => setBlankModalState(null)}
-            />
-          )}
-        </>
-      )}
-      <GameToolbar
-        gameId={gameId}
-        pendingPlacements={pendingPlacements}
-        recycleIndices={recycleIndices}
-        myRack={myRack}
-        isValidPlay={isValidPlay}
-        isMyTurn={gameState?.turn === myUserId}
-        isGameActive={isGameActive}
-        isRecycleOpen={isRecycleOpen}
-        onPlayed={handlePlayed}
-        onRecycled={handleRecycled}
-        onRecall={handleRecall}
-        onToggleRecycle={handleToggleRecycle}
-      />
-    </div>
-
-</>
-  );
-}
-
-function ScoreBoard({ state, game }: { state: GameState; game: Game | null }) {
-  const label = (userId: string) => {
-    if (!game) return userId.slice(-6);
-    if (game.user.id === userId) return `${game.user.firstname} ${game.user.lastname}`;
-    if (game.opponent.id === userId) return `${game.opponent.firstname} ${game.opponent.lastname}`;
-    return userId.slice(-6);
-  };
-
-  const isFinished = state.status === 'finished';
-  const winnerId = isFinished ? (state.winner ?? null) : null;
-  const isTie = isFinished && winnerId === null;
-  const [p1, p2] = state.players;
-
-  function accentLeft(pid: string) {
-    if (isFinished && isTie) return 'border-l-2 border-amber-400 dark:border-amber-500 pl-2';
-    if (winnerId === pid) return 'border-l-2 border-amber-400 dark:border-amber-500 pl-2';
-    if (state.turn === pid && !isFinished) return 'border-l-2 border-blue-400 dark:border-blue-500 pl-2';
-    return 'border-l-2 border-transparent pl-2';
-  }
-
-  function accentRight(pid: string) {
-    if (isFinished && isTie) return 'border-r-2 border-amber-400 dark:border-amber-500 pr-2';
-    if (winnerId === pid) return 'border-r-2 border-amber-400 dark:border-amber-500 pr-2';
-    if (state.turn === pid && !isFinished) return 'border-r-2 border-blue-400 dark:border-blue-500 pr-2';
-    return 'border-r-2 border-transparent pr-2';
-  }
-
-  return (
-    <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-      {isFinished && (
-        isTie ? (
-          <div className="flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-900/20 px-4 py-1.5 border-b border-blue-100 dark:border-blue-800/40">
-            <span>🤝</span>
-            <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">
-              It's a tie!
-            </span>
-          </div>
-        ) : winnerId ? (
-          <div className="flex items-center justify-center gap-1.5 bg-amber-50 dark:bg-amber-900/20 px-4 py-1.5 border-b border-amber-100 dark:border-amber-800/40">
-            <span>🏆</span>
-            <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-              {label(winnerId)} wins!
-            </span>
-          </div>
-        ) : null
-      )}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-start px-4 py-[10px] gap-3">
-        {/* Player 1 — left-aligned */}
-        <div className={`min-w-0 transition-colors ${accentLeft(p1)}`}>
-          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{label(p1)}</p>
-          <p className={`text-2xl font-bold tabular-nums leading-tight ${(winnerId === p1 || isTie) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'}`}>
-            {state.scores[p1] ?? 0}
-          </p>
-          {isTie && <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Tie</p>}
-          {!isTie && winnerId === p1 && (
-            <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Winner</p>
-          )}
-        </div>
-
-        {/* Tile bag — always centered */}
-        <div className="flex flex-col items-center gap-0.5 pt-0.5">
-          <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-          </svg>
-          <span className="text-xs font-semibold tabular-nums text-gray-500 dark:text-gray-400 leading-none">
-            {state.tile_bag.length}
-          </span>
-        </div>
-
-        {/* Player 2 — right-aligned */}
-        {p2 ? (
-          <div className={`min-w-0 text-right transition-colors ${accentRight(p2)}`}>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{label(p2)}</p>
-            <p className={`text-2xl font-bold tabular-nums leading-tight ${(winnerId === p2 || isTie) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'}`}>
-              {state.scores[p2] ?? 0}
-            </p>
-            {isTie && <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Tie</p>}
-            {!isTie && winnerId === p2 && (
-              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Winner</p>
-            )}
-          </div>
-        ) : (
-          <div className="text-right pt-0.5">
-            <p className="text-xs text-gray-400 dark:text-gray-500 italic">Waiting…</p>
-          </div>
         )}
+
+        <GameToolbar
+          gameId={gameId}
+          pendingPlacements={pendingPlacements}
+          recycleIndices={recycleIndices}
+          myRack={myRack}
+          isValidPlay={isValidPlay}
+          isMyTurn={gameState?.turn === myUserId}
+          isGameActive={isGameActive}
+          isRecycleOpen={isRecycleOpen}
+          onPlayed={handlePlayed}
+          onRecycled={handleRecycled}
+          onRecall={handleRecall}
+          onToggleRecycle={handleToggleRecycle}
+        />
       </div>
-    </div>
-  );
-}
 
-
-function GameInfo({ game }: { game: Game }) {
-  const gameDate = new Date(game.date);
-  const formattedDate = gameDate.toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
-  const formattedTime = gameDate.toLocaleTimeString(undefined, {
-    hour: '2-digit', minute: '2-digit',
-  });
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 overflow-hidden">
-      {game.completed && (
-        <div className="flex items-center justify-center gap-2 bg-amber-50 dark:bg-amber-900/20 px-4 py-2 border-b border-amber-100 dark:border-amber-800/40">
-          <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
-            {game.winner} wins
-          </span>
-        </div>
+      {blankModalState && (
+        <BlankTileModal
+          onSelect={(chosen) => {
+            setPendingPlacements((prev) => ({
+              ...prev,
+              [blankModalState.boardKey]: { letter: chosen, rackIndex: blankModalState.rackIndex, isBlank: true },
+            }));
+            setBlankModalState(null);
+          }}
+          onDismiss={() => setBlankModalState(null)}
+        />
       )}
-
-      <div className="p-4 space-y-3">
-        <div className="flex items-center gap-4">
-          {game.completed ? (
-            <>
-              <PlayerScore name={`${game.user.firstname} ${game.user.lastname}`} score={game.userScore} isWinner={game.winner === game.user.id} align="left" />
-              <span className="shrink-0 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">vs</span>
-              <PlayerScore name={`${game.opponent.firstname} ${game.opponent.lastname}`} score={game.opponentScore} isWinner={game.winner === game.opponent.id} align="right" />
-
-            </>
-          ) : (
-            <>
-              <Player name={`${game.user.firstname} ${game.user.lastname}`} align="left" />
-              <span className="shrink-0 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">vs</span>
-              <Player name={`${game.opponent.firstname} ${game.opponent.lastname}`} align="right" />
-            </>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-gray-100 dark:border-gray-800 pt-3 text-xs text-gray-500 dark:text-gray-400">
-          <div className="flex items-center gap-2">
-            {game.turn_timer && game.duration != null ? (
-              <>
-                <span>{game.duration} min</span>
-                {(game.timeIncrement ?? 0) > 0 && (
-                  <>
-                    <span className="text-gray-300 dark:text-gray-600">·</span>
-                    <span>+{game.timeIncrement} sec / move</span>
-                  </>
-                )}
-              </>
-            ) : (
-              <span>No timer</span>
-            )}
-          </div>
-          <span>{formattedDate} at {formattedTime}</span>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }
 
-function Player({ name, align }: { name: string; align: 'left' | 'right' }) {
-  return (
-    <div className={`flex-1 ${align === 'right' ? 'text-right' : 'text-left'}`}>
-      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{name}</p>
-    </div>
-  );
-}
-
-function PlayerScore({
-  name, score, isWinner, align,
+function PlayerScoreChip({
+  id,
+  state,
+  getLabel,
+  align,
 }: {
-  name: string;
-  score: number;
-  isWinner: boolean;
+  id: string;
+  state: GameState;
+  getLabel: (id: string) => string;
   align: 'left' | 'right';
 }) {
+  const isFinished = state.status === 'finished';
+  const isCurrent = !isFinished && state.turn === id;
+  const isWinner = isFinished && state.winner === id;
+  const isTie = isFinished && state.winner === null;
+  const highlighted = isWinner || isTie;
+
   return (
-    <div className={`flex-1 flex flex-col gap-0.5 ${align === 'right' ? 'items-end' : 'items-start'}`}>
-      <p className={`text-sm font-semibold truncate ${isWinner ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'}`}>
-        {name}
+    <div
+      className={`flex-1 min-w-0 flex flex-col ${align === 'right' ? 'items-end' : 'items-start'} transition-opacity ${!isFinished && !isCurrent ? 'opacity-40' : 'opacity-100'}`}
+    >
+      <p className={`text-[10px] font-semibold uppercase tracking-widest truncate max-w-full leading-none ${highlighted ? 'text-amber-500 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
+        {getLabel(id)}{(isWinner || isTie) ? ' ★' : ''}
       </p>
-      <p className="text-xl font-bold tabular-nums text-gray-800 dark:text-gray-200">{score}</p>
+      <p className={`score-font text-[28px] leading-tight tabular-nums ${highlighted ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
+        {state.scores[id] ?? 0}
+      </p>
+      {isCurrent && (
+        <div className={`h-0.5 w-5 rounded-full bg-blue-500 dark:bg-blue-400 mt-0.5 ${align === 'right' ? 'self-end' : ''}`} />
+      )}
     </div>
   );
 }
