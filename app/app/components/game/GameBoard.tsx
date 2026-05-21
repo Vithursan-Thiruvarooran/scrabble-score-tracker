@@ -81,10 +81,10 @@ function DraggableTile({ row, col, letter, isBlank }: { row: number; col: number
       {...attributes}
       className={`absolute inset-0 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none transition-opacity ${isDragging ? 'opacity-30' : ''}`}
     >
-      <span className="text-[clamp(14px,5vw,32px)] font-bold text-gray-900 leading-none select-none">
+      <span className="text-[clamp(11px,4.5vw,28px)] font-extrabold text-amber-900 dark:text-amber-950 leading-none select-none">
         {letter.toUpperCase()}
       </span>
-      <span className="absolute bottom-0 right-[1px] text-[clamp(5px,1.5vw,11px)] font-semibold text-gray-600 leading-none select-none">
+      <span className="absolute bottom-0 right-[1px] text-[clamp(8px,2.4vw,14px)] font-bold text-amber-700 dark:text-amber-800 leading-none select-none">
         {isBlank ? 0 : (TILE_VALUES[letter] ?? 0)}
       </span>
     </div>
@@ -131,17 +131,17 @@ function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareTy
           <DraggableTile row={row} col={col} letter={letter} isBlank={isBlank} />
         ) : (
           <>
-            <span className="text-[clamp(14px,5vw,32px)] font-bold text-gray-900 leading-none select-none">
+            <span className="text-[clamp(11px,4.5vw,28px)] font-extrabold text-amber-900 dark:text-amber-950 leading-none select-none">
               {letter.toUpperCase()}
             </span>
-            <span className="absolute bottom-0 right-[1px] text-[clamp(5px,1.5vw,11px)] font-semibold text-gray-600 leading-none select-none">
+            <span className="absolute bottom-0 right-[1px] text-[clamp(8px,2.4vw,14px)] font-bold text-amber-700 dark:text-amber-800 leading-none select-none">
               {TILE_VALUES[letter] ?? 0}
             </span>
           </>
         )
       ) : (
         squareType !== 'normal' && (
-          <span className={`text-[clamp(5px,1.3vw,9px)] font-bold leading-tight text-center select-none ${LABEL_TEXT_CLASSES[squareType]}`}>
+          <span className={`text-[clamp(8px,2.1vw,13px)] font-bold leading-tight text-center select-none ${LABEL_TEXT_CLASSES[squareType]}`}>
             {SQUARE_LABELS[squareType]}
           </span>
         )
@@ -191,12 +191,7 @@ export function GameBoard({ board, pendingPlacements, isValidPlay = false }: Gam
           ))
         )}
       </div>
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 px-3 py-1">
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-600 dark:bg-red-700" /> Triple Word</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-pink-300 dark:bg-pink-700" /> Double Word</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-600 dark:bg-blue-800" /> Triple Letter</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-300 dark:bg-sky-700" /> Double Letter</span>
-      </div>
+
     </div>
   );
 }

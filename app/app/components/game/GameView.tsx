@@ -1,12 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
-import { socket } from '../../socket';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { socket, connectSocket } from '../../socket';
 import { useParams } from 'react-router';
 import {
   DndContext, DragOverlay, PointerSensor,
   useSensor, useSensors,
   type DragStartEvent, type DragEndEvent,
 } from '@dnd-kit/core';
-import { SocketIndicator } from '../SocketIndicator';
 import { useGameRoom } from '../../hooks/useGameRoom';
 import { Link } from 'react-router';
 import type { GameState } from '../../services/game';
@@ -109,6 +108,15 @@ export function GameView() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showResignDialog, setShowResignDialog] = useState(false);
   const [resignPending, setResignPending] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(socket.connected);
+
+  useEffect(() => {
+    function onConnect() { setSocketConnected(true); }
+    function onDisconnect() { setSocketConnected(false); }
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); };
+  }, []);
 
   const isGameActive = gameState?.status === 'active';
 
@@ -299,21 +307,69 @@ export function GameView() {
       )}
 
       <div className="h-dvh flex flex-col overflow-hidden bg-white dark:bg-gray-950">
-        <SocketIndicator />
 
-        {/* Compact header: back nav + integrated scores + menu */}
-        <header className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-950">
-          <Link
-            to="/"
-            className="shrink-0 flex items-center justify-center w-10 h-10 -ml-1 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clipRule="evenodd" />
-            </svg>
-          </Link>
+        {/* Header: top row (back + menu), second row (scores) */}
+        <header className="shrink-0 flex flex-col border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-950">
+          {/* Top row: back + label + hamburger */}
+          <div className="flex items-center justify-between px-3 pt-2 pb-1">
+            <Link
+              to="/"
+              className="shrink-0 flex items-center justify-center w-10 h-10 -ml-1 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clipRule="evenodd" />
+              </svg>
+            </Link>
 
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Scoreboard</span>
+
+            <div className="shrink-0 relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                className="flex items-center justify-center w-10 h-10 -mr-1 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
+                aria-label="Menu"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <rect y="2" width="16" height="1.5" rx="0.75" />
+                  <rect y="7.25" width="16" height="1.5" rx="0.75" />
+                  <rect y="12.5" width="16" height="1.5" rx="0.75" />
+                </svg>
+              </button>
+              <div
+                className={`absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-white dark:border-gray-950 pointer-events-none ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
+                title={socketConnected ? 'Connected' : 'Disconnected'}
+              />
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); leaveGame(); }}
+                      disabled={leavePending || joinPending || Boolean(joinError)}
+                      className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      {leavePending ? 'Leaving…' : 'Leave game'}
+                    </button>
+                    {isGameActive && (
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen(false); setShowResignDialog(true); }}
+                        className="w-full border-t border-gray-100 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:border-gray-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                      >
+                        Resign
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Scoreboard row */}
           {gameState && p1 && p2 ? (
-            <>
+            <div className="flex items-center gap-2 px-3 pb-2">
               <PlayerScoreChip id={p1} state={gameState} getLabel={getLabel} align="left" />
 
               <div className="shrink-0 flex flex-col items-center gap-0.5 px-1">
@@ -332,49 +388,10 @@ export function GameView() {
               </div>
 
               <PlayerScoreChip id={p2} state={gameState} getLabel={getLabel} align="right" />
-            </>
+            </div>
           ) : (
-            <div className="flex-1" />
+            <div className="pb-2" />
           )}
-
-          <div className="shrink-0 relative">
-            <button
-              type="button"
-              onClick={() => setMenuOpen((prev) => !prev)}
-              className="flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
-              aria-label="Menu"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <rect y="2" width="16" height="1.5" rx="0.75" />
-                <rect y="7.25" width="16" height="1.5" rx="0.75" />
-                <rect y="12.5" width="16" height="1.5" rx="0.75" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); leaveGame(); }}
-                    disabled={leavePending || joinPending || Boolean(joinError)}
-                    className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    {leavePending ? 'Leaving…' : 'Leave game'}
-                  </button>
-                  {isGameActive && (
-                    <button
-                      type="button"
-                      onClick={() => { setMenuOpen(false); setShowResignDialog(true); }}
-                      className="w-full border-t border-gray-100 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:border-gray-700 dark:text-red-400 dark:hover:bg-red-950/30"
-                    >
-                      Resign
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
         </header>
 
         {leaveError && (
@@ -493,10 +510,10 @@ function FloatingTile({ letter, isBlank }: { letter: string; isBlank?: boolean }
   const isRawBlank = letter === '?';
   return (
     <div className="relative flex h-10 w-10 items-center justify-center rounded bg-amber-100 shadow-md border border-amber-300 select-none rotate-3 scale-110">
-      <span className="text-[32px] font-bold leading-none text-gray-900">
+      <span className="text-[29px] font-extrabold leading-none text-amber-900">
         {isRawBlank ? '' : letter.toUpperCase()}
       </span>
-      <span className="absolute bottom-0.5 right-0.5 text-[8px] font-semibold leading-none text-gray-600">
+      <span className="absolute bottom-0.5 right-0.5 text-[13px] font-bold leading-none text-amber-700">
         {isBlank || isRawBlank ? 0 : (TILE_VALUES[letter] ?? 0)}
       </span>
     </div>

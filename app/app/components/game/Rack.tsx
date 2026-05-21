@@ -44,11 +44,11 @@ function RackSlot({ letter, originalIndex, slotIndex, isPlaced }: RackSlotProps)
         ${isDragging || isPlaced ? 'opacity-30 cursor-default' : 'cursor-grab active:cursor-grabbing'}
       `}
     >
-      <span className="text-[28px] font-bold leading-none text-gray-900">
+      <span className="text-[27px] font-extrabold leading-none text-amber-900">
         {isBlank ? '' : letter}
       </span>
       {!isBlank && (
-        <span className="absolute bottom-0.5 right-0.5 text-[8px] font-semibold leading-none text-gray-600">
+        <span className="absolute bottom-0.5 right-0.5 text-[13px] font-bold leading-none text-amber-700">
           {TILE_VALUES[letter] ?? 0}
         </span>
       )}
