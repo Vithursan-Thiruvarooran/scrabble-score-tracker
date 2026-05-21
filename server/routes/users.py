@@ -61,6 +61,8 @@ async def add_friend(payload: AddFriendRequest, current_user=Depends(get_current
 
     if await db.friends.find_one({"userId": user_id, "friendId": payload.friendId}):
         raise HTTPException(status_code=409, detail="Friend request already sent")
+    if await db.friends.find_one({"userId": payload.friendId, "friendId": user_id}):
+        raise HTTPException(status_code=409, detail="A friend request from this user is already pending.")
 
     result = await db.friends.insert_one({
         "userId": user_id,

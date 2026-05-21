@@ -4,6 +4,9 @@ import asyncio
 import logging
 from typing import Optional
 
+from bson import ObjectId
+
+from db import get_db
 from services.auth import decode_access_token
 from services.dispute_timers import cancel_dispute_timeout
 from services.redis_cache import evict_state
@@ -71,13 +74,28 @@ async def joinGame(sid, data):
         await sio.emit("join_error", {"message": "No game found with that code."}, to=sid)
         return
 
+    user_id = socket_manager.get_user(sid)
+
+    # Verify the requesting user is the creator or the invited opponent.
+    try:
+        db = get_db()
+        game_doc = await db.games.find_one({"_id": ObjectId(game_id)})
+    except Exception:
+        await sio.emit("join_error", {"message": "Invalid game id."}, to=sid)
+        return
+    if not game_doc:
+        await sio.emit("join_error", {"message": "Game not found."}, to=sid)
+        return
+    if game_doc.get("user") != user_id and game_doc.get("opponent") != user_id:
+        await sio.emit("join_error", {"message": "You are not a participant in this game."}, to=sid)
+        return
+
     logger.info("joinGame: room=%s sid=%s", game_id, sid)
     await sio.enter_room(sid, game_id)
     await sio.emit("joined_game", {"sid": sid, "room": game_id}, room=game_id)
 
     # Add the joining player to game state (no-op if already present), then
     # broadcast the full state so all clients in the room re-render.
-    user_id = socket_manager.get_user(sid)
     state = await add_player_to_state(game_id, user_id)
     if state is None:
         state = await get_game_state(game_id)
@@ -116,19 +134,31 @@ async def leaveGame(sid, data):
 @sio.event
 async def subscribe_game(sid, data):
     """Join a socket room for passive real-time updates without modifying game state."""
-    if not await _require_auth(sid, "subscribe_error"):
+    user_id = await _require_auth(sid, "subscribe_error")
+    if not user_id:
         return
     if not isinstance(data, dict):
         return
     game_id = data.get("game_id", "")
-    if isinstance(game_id, str) and game_id and game_id in active_game_rooms:
-        await sio.enter_room(sid, game_id)
-        logger.info("subscribe_game: room=%s sid=%s", game_id, sid)
+    if not isinstance(game_id, str) or not game_id or game_id not in active_game_rooms:
+        return
+    try:
+        db = get_db()
+        game_doc = await db.games.find_one({"_id": ObjectId(game_id)})
+    except Exception:
+        return
+    if not game_doc or (game_doc.get("user") != user_id and game_doc.get("opponent") != user_id):
+        await sio.emit("subscribe_error", {"message": "You are not a participant in this game."}, to=sid)
+        return
+    await sio.enter_room(sid, game_id)
+    logger.info("subscribe_game: room=%s sid=%s", game_id, sid)
 
 
 @sio.event
 async def unsubscribe_game(sid, data):
     """Leave a socket room previously joined via subscribe_game."""
+    if not await _require_auth(sid, "unsubscribe_error"):
+        return
     if not isinstance(data, dict):
         return
     game_id = data.get("game_id", "")
@@ -163,12 +193,30 @@ async def play_move(sid, data):
         await sio.emit("play_error", {"message": "game_id is required."}, to=sid)
         return
 
+    _VALID_MOVE_TYPES = {"place", "pass", "recycle", "resign"}
+    if not isinstance(move_type, str) or move_type not in _VALID_MOVE_TYPES:
+        await sio.emit("play_error", {"message": "move_type must be one of: place, pass, recycle, resign."}, to=sid)
+        return
+
     try:
         if move_type == "place":
             tiles = data.get("tiles")
             if not isinstance(tiles, list) or not tiles:
                 await sio.emit("play_error", {"message": "tiles (list) is required for a place move."}, to=sid)
                 return
+            for t in tiles:
+                if not isinstance(t, dict) or not {"row", "col", "letter"} <= t.keys():
+                    await sio.emit("play_error", {"message": "Each tile must have row, col, and letter."}, to=sid)
+                    return
+                if not isinstance(t["row"], int) or not isinstance(t["col"], int):
+                    await sio.emit("play_error", {"message": "Tile row and col must be integers."}, to=sid)
+                    return
+                if not (0 <= t["row"] <= 14 and 0 <= t["col"] <= 14):
+                    await sio.emit("play_error", {"message": "Tile row and col must be in range [0, 14]."}, to=sid)
+                    return
+                if not isinstance(t["letter"], str) or len(t["letter"]) != 1:
+                    await sio.emit("play_error", {"message": "Each tile letter must be a single character."}, to=sid)
+                    return
             state, error = await apply_place(game_id, user_id, tiles)
 
         elif move_type == "pass":
@@ -186,10 +234,6 @@ async def play_move(sid, data):
 
         elif move_type == "resign":
             state, error = await apply_resign(game_id, user_id)
-
-        else:
-            await sio.emit("play_error", {"message": f"Unknown move_type '{move_type}'. Expected: place, pass, recycle, resign."}, to=sid)
-            return
 
         logger.info("play_move: room=%s user=%s type=%s error=%s", game_id, user_id, move_type, error)
 

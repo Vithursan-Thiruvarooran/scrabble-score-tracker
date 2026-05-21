@@ -33,6 +33,8 @@ def validate_placement(
         return "No tiles provided."
 
     for t in tiles:
+        if not (0 <= t["row"] <= 14 and 0 <= t["col"] <= 14):
+            return f"Tile position ({t['row']}, {t['col']}) is out of bounds."
         if board[t["row"]][t["col"]] is not None:
             return f"Cell ({t['row']}, {t['col']}) is already occupied."
 

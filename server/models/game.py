@@ -15,11 +15,11 @@ class GameBase(BaseModel):
     dictionary: str = "TWL06"
     board_type: str = "standard"
     turn_timer: bool = False
-    duration: Optional[int] = None
-    timeIncrement: Optional[int] = None
+    duration: Optional[int] = Field(default=None, ge=60, le=86400)
+    timeIncrement: Optional[int] = Field(default=None, ge=0, le=600)
     online: bool = True
     disputes: bool = False
-    dispute_timeout: int = 60
+    dispute_timeout: int = Field(default=60, ge=10, le=3600)
 
 
 class TilePlacement(BaseModel):

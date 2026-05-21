@@ -81,11 +81,17 @@ async def _games_to_out(games: List[dict], db) -> List[GameOut]:
 async def create_game(payload: GameBase, current_user=Depends(get_current_user)):
     user_id = str(current_user["_id"])
 
+    if payload.opponent == user_id:
+        raise HTTPException(status_code=400, detail="Cannot create a game against yourself.")
+    opponent_oid = validate_object_id(payload.opponent, "opponent id")
+    db = get_db()
+    if not await db.users.find_one({"_id": opponent_oid}):
+        raise HTTPException(status_code=404, detail="Opponent not found.")
+
     sids = socket_manager.get_sids(user_id)
     if not sids:
         raise HTTPException(status_code=400, detail="No active socket connection.")
 
-    db = get_db()
     result = await db.games.insert_one({
         "opponent": payload.opponent,
         "dictionary": payload.dictionary,
@@ -148,6 +154,7 @@ async def get_my_games(completed: Optional[bool] = None, current_user=Depends(ge
 
 @router.get("/user/{user_id}", response_model=List[GameOut])
 async def get_games_by_user(user_id: str):
+    validate_object_id(user_id, "user id")
     db = get_db()
     query = {"$or": [{"user": user_id}, {"opponent": user_id}]}
     games = await db.games.find(query).sort("date", -1).to_list(length=None)
@@ -155,16 +162,31 @@ async def get_games_by_user(user_id: str):
 
 
 @router.get("/{game_id}/state", response_model=GameState)
-async def get_game_state_route(game_id: str):
-    state = await get_game_state(game_id)
+async def get_game_state_route(game_id: str, current_user=Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    db = get_db()
+    oid = validate_object_id(game_id, "game id")
+    game = await db.games.find_one({"_id": oid})
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found.")
+    if game.get("user") != user_id and game.get("opponent") != user_id:
+        raise HTTPException(status_code=403, detail="You are not a participant in this game.")
+    state = game.get("game_state")
     if not state:
         raise HTTPException(status_code=404, detail="Game state not found.")
     return GameState(game_id=game_id, **state)
 
 
 @router.get("/{game_id}/moves", response_model=List[GameMove])
-async def get_game_moves(game_id: str, move_type: Optional[str] = None):
+async def get_game_moves(game_id: str, current_user=Depends(get_current_user), move_type: Optional[str] = None):
+    user_id = str(current_user["_id"])
     db = get_db()
+    oid = validate_object_id(game_id, "game id")
+    game = await db.games.find_one({"_id": oid})
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found.")
+    if game.get("user") != user_id and game.get("opponent") != user_id:
+        raise HTTPException(status_code=403, detail="You are not a participant in this game.")
     query: dict = {"game_id": game_id}
     if move_type:
         query["move_type"] = move_type
@@ -173,12 +195,15 @@ async def get_game_moves(game_id: str, move_type: Optional[str] = None):
 
 
 @router.get("/{game_id}", response_model=GameOut)
-async def get_game(game_id: str):
+async def get_game(game_id: str, current_user=Depends(get_current_user)):
+    user_id = str(current_user["_id"])
     db = get_db()
     oid = validate_object_id(game_id, "game id")
     game = await db.games.find_one({"_id": oid})
     if not game:
         raise HTTPException(status_code=404, detail="Game not found.")
+    if game.get("user") != user_id and game.get("opponent") != user_id:
+        raise HTTPException(status_code=403, detail="You are not a participant in this game.")
     results = await _games_to_out([game], db)
     return results[0]
 
