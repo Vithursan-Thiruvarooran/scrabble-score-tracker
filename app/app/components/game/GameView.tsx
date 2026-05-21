@@ -9,6 +9,7 @@ import {
 import { useGameRoom } from '../../hooks/useGameRoom';
 import { Link } from 'react-router';
 import type { GameState } from '../../services/game';
+import { ChallengePrompt } from './ChallengePrompt';
 import { GameBoard, type PendingPlacements } from './GameBoard';
 import { GameReview } from './GameReview';
 import { Rack } from './Rack';
@@ -95,7 +96,7 @@ function validatePlay(
 export function GameView() {
   const { gameId } = useParams();
   const { user } = useAuth();
-  const { joinPending, joinError, game, gameState } = useGameRoom(gameId);
+  const { joinPending, joinError, game, gameState, awaitingResponse, respondToChallenge, respondPending } = useGameRoom(gameId);
 
   const myUserId = user?.id ?? null;
   const myRack = myUserId && gameState ? (gameState.racks[myUserId] ?? []) : [];
@@ -122,6 +123,11 @@ export function GameView() {
 
   const isGameActive = gameState?.status === 'active';
   const isDisputePending = Boolean(gameState?.pending_dispute);
+  // Allow the creator to place their first word while the opponent hasn't joined yet,
+  // but only if they haven't already moved (one pre-game word max).
+  const creatorAlreadyMoved = (gameState?.game_moves ?? []).some(m => m.move_type !== 'initial');
+  const isCreatorPreGame = gameState?.status === 'waiting' && game?.user.id === myUserId && !creatorAlreadyMoved;
+  const canPlayMove = (isGameActive || isCreatorPreGame) && !isDisputePending;
 
   function handleResign() {
     setShowResignDialog(false);
@@ -279,6 +285,20 @@ export function GameView() {
     return `#${userId.slice(-4)}`;
   }
 
+  if (awaitingResponse && game) {
+    return (
+      <ChallengePrompt
+        challengerName={`${game.user.firstname} ${game.user.lastname}`}
+        dictionary={game.dictionary}
+        disputes={game.disputes}
+        turnTimer={game.turn_timer}
+        onAccept={() => respondToChallenge(true)}
+        onReject={() => respondToChallenge(false)}
+        loading={respondPending}
+      />
+    );
+  }
+
   return (
     <>
       {showResignDialog && (
@@ -413,6 +433,14 @@ export function GameView() {
           </div>
         )}
 
+        {gameState?.status === 'waiting' && game?.user.id === myUserId && creatorAlreadyMoved && (
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-100 dark:border-amber-900/50">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400 text-center">
+              Waiting for your opponent to accept the challenge…
+            </p>
+          </div>
+        )}
+
         {joinPending && (
           <p className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">Joining room…</p>
         )}
@@ -461,7 +489,7 @@ export function GameView() {
             myRack={myRack}
             isValidPlay={isValidPlay}
             isMyTurn={gameState?.turn === myUserId}
-            isGameActive={isGameActive && !isDisputePending}
+            isGameActive={canPlayMove}
             isRecycleOpen={isRecycleOpen}
             onPlayed={handlePlayed}
             onRecycled={handleRecycled}

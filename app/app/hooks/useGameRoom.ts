@@ -7,7 +7,7 @@ import * as gameService from '../services/game';
 import type { Game, GameState } from '../services/game';
 
 export function useGameRoom(gameId: string | undefined) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const { notify } = useNotifications();
 
@@ -17,9 +17,12 @@ export function useGameRoom(gameId: string | undefined) {
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [awaitingResponse, setAwaitingResponse] = useState(false);
+  const [respondPending, setRespondPending] = useState(false);
   const gameIdRef = useRef(gameId);
   gameIdRef.current = gameId;
   const socketCleanupRef = useRef<(() => void) | null>(null);
+  const doJoinRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!gameId) {
@@ -29,6 +32,7 @@ export function useGameRoom(gameId: string | undefined) {
 
     setJoinPending(true);
     setJoinError(null);
+    setAwaitingResponse(false);
     socketCleanupRef.current = null;
     let cancelled = false;
 
@@ -74,11 +78,23 @@ export function useGameRoom(gameId: string | undefined) {
           socket.emit('joinGame', { game_id: gameId });
         };
 
+        doJoinRef.current = doJoin;
+
         socketCleanupRef.current = () => {
           socket.off('connect', doJoin);
           socket.off('joined_game', onJoinOk);
           socket.off('join_error', onJoinErr);
         };
+
+        // If the current user is the opponent and the challenge is still pending,
+        // hold off on joining — show the accept/reject prompt first.
+        const userId = user?.id;
+        const isOpponent = userId && fetchedGame.opponent.id === userId;
+        if (isOpponent && fetchedGame.invitation_status === 'pending') {
+          setAwaitingResponse(true);
+          setJoinPending(false);
+          return;
+        }
 
         if (socket.connected) {
           doJoin();
@@ -98,8 +114,9 @@ export function useGameRoom(gameId: string | undefined) {
       socketCleanupRef.current?.();
       socketCleanupRef.current = null;
     };
-  }, [gameId, token, navigate]);
+  }, [gameId, token, navigate, user]);
 
+  // Listen for game_state updates and game_cancelled events
   useEffect(() => {
     function onGameState(data: GameState) {
       if (data.game_id === gameIdRef.current) {
@@ -112,9 +129,47 @@ export function useGameRoom(gameId: string | undefined) {
         });
       }
     }
+
+    function onGameCancelled(data: { game_id: string }) {
+      if (data.game_id === gameIdRef.current) {
+        notify({ message: 'Opponent declined the challenge.', key: `cancelled-${data.game_id}` });
+        navigate('/');
+      }
+    }
+
     socket.on('game_state', onGameState);
-    return () => { socket.off('game_state', onGameState); };
-  }, [notify]);
+    socket.on('game_cancelled', onGameCancelled);
+    return () => {
+      socket.off('game_state', onGameState);
+      socket.off('game_cancelled', onGameCancelled);
+    };
+  }, [notify, navigate]);
+
+  const respondToChallenge = useCallback(async (accept: boolean) => {
+    if (!gameId || !token) return;
+    setRespondPending(true);
+    try {
+      await gameService.respondToChallenge(gameId, accept, token);
+      if (accept) {
+        setAwaitingResponse(false);
+        setJoinPending(true);
+        const doJoin = doJoinRef.current;
+        if (doJoin) {
+          if (socket.connected) {
+            doJoin();
+          } else {
+            socket.once('connect', doJoin);
+          }
+        }
+      } else {
+        navigate('/');
+      }
+    } catch {
+      notify({ message: 'Could not respond to challenge.', key: 'respond-error' });
+    } finally {
+      setRespondPending(false);
+    }
+  }, [gameId, token, navigate, notify]);
 
   const leaveGame = useCallback(() => {
     if (!gameId) {
@@ -158,5 +213,16 @@ export function useGameRoom(gameId: string | undefined) {
     socket.emit('leaveGame', { game_id: gameId });
   }, [gameId, navigate, game]);
 
-  return { joinPending, joinError, leavePending, leaveError, game, gameState, leaveGame };
+  return {
+    joinPending,
+    joinError,
+    leavePending,
+    leaveError,
+    game,
+    gameState,
+    leaveGame,
+    awaitingResponse,
+    respondToChallenge,
+    respondPending,
+  };
 }

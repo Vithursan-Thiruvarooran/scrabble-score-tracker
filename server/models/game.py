@@ -91,3 +91,4 @@ class GameOut(BaseModel):
     opponentScore: int = 0
     date: Optional[datetime] = None
     game_state: Optional[GameStateSummary] = None
+    invitation_status: Optional[str] = "pending"

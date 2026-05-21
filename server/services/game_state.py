@@ -111,6 +111,9 @@ async def add_player_to_state(game_id: str, player_id: str) -> Optional[dict]:
     state["racks"][player_id] = rack
     state["scores"][player_id] = 0
     state["status"] = "active"
+    non_initial = [m for m in state.get("game_moves", []) if m.get("move_type") != "initial"]
+    if non_initial:
+        state["turn"] = player_id
 
     await db.games.update_one(
         {"_id": ObjectId(game_id)},
@@ -268,7 +271,17 @@ async def apply_place(
     state = await _load_state(game_id)
     if not state:
         return None, "Game not found."
-    if state.get("status") != "active":
+    status = state.get("status")
+    _players: List[str] = state.get("players", [])
+    if status == "finished":
+        return state, "Game is already finished."
+    if status == "waiting":
+        if len(_players) != 1 or _players[0] != player_id:
+            return state, "Game is not active."
+        already_played = any(m.get("move_type") != "initial" for m in state.get("game_moves", []))
+        if already_played:
+            return state, "Waiting for opponent to join before your next turn."
+    elif status != "active":
         return state, "Game is not active."
     if state.get("turn") != player_id:
         return state, "It is not your turn."

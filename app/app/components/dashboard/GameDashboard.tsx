@@ -10,6 +10,7 @@ import { NewGameForm } from './NewGameForm';
 import { CurrentGames } from './CurrentGames';
 import { NotificationBanner } from './NotificationBanner';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { socket } from '../../socket';
 
 interface GameDashboardProps {
@@ -19,6 +20,7 @@ interface GameDashboardProps {
 export function GameDashboard({ onLogout }: GameDashboardProps) {
   const navigate = useNavigate();
   const { token } = useAuth();
+  const { notify } = useNotifications();
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState<'create' | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -33,6 +35,18 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
     socket.on('disconnect', onDisconnect);
     return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); };
   }, []);
+
+  useEffect(() => {
+    function onChallenge({ game_id, challenger_name }: { game_id: string; challenger_name: string }) {
+      notify({
+        message: `${challenger_name} challenged you to a game!`,
+        action: { label: 'View', to: `/game/${game_id}` },
+        key: `challenge-${game_id}`,
+      });
+    }
+    socket.on('game_challenge', onChallenge);
+    return () => { socket.off('game_challenge', onChallenge); };
+  }, [notify]);
 
   async function handleCreate(params: CreateGameParams) {
     setBusy('create');

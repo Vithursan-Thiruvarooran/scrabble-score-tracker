@@ -41,6 +41,7 @@ export interface Game {
   opponentScore: number;
   date: string;
   game_state: GameStateSummary | null;
+  invitation_status: string | null;
 }
 
 export interface PendingDispute {
@@ -112,5 +113,13 @@ export function getGameState(gameId: string, token: string): Promise<GameState> 
 export function getGameMoves(gameId: string, token: string): Promise<GameMove[]> {
   return apiFetch<GameMove[]>(`/game/${gameId}/moves`, {
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function respondToChallenge(gameId: string, accept: boolean, token: string): Promise<void> {
+  await apiFetch<Game>(`/game/${gameId}/respond`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ accept }),
   });
 }
