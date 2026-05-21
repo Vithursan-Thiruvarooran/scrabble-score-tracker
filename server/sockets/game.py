@@ -5,6 +5,7 @@ from typing import Optional
 
 from services.auth import decode_access_token
 from services.dispute_timers import cancel_dispute_timeout
+from services.redis_cache import evict_state
 from services.game_state import (
     add_player_to_state,
     apply_place,
@@ -17,6 +18,13 @@ from services.room import active_game_rooms
 from sockets import sio, socket_manager
 
 logger = logging.getLogger(__name__)
+
+
+async def _close_finished_game(game_id: str) -> None:
+    cancel_dispute_timeout(game_id)
+    active_game_rooms.discard(game_id)
+    await evict_state(game_id)
+    logger.info("game finished and closed: room=%s", game_id)
 
 
 async def _require_auth(sid: str, error_event: str) -> Optional[str]:
@@ -192,6 +200,8 @@ async def play_move(sid, data):
         else:
             await sio.emit("play_move_ok", {"message": "Move accepted.", "move_type": move_type}, to=sid)
             await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
+            if state.get("status") == "finished":
+                await _close_finished_game(game_id)
 
     except Exception as exc:
         logger.exception("play_move unhandled error: room=%s user=%s type=%s: %s", game_id, user_id, move_type, exc)
@@ -227,3 +237,5 @@ async def resolve_dispute(sid, data):
     else:
         await sio.emit("play_move_ok", {"message": "Dispute resolved.", "move_type": "resolve_dispute"}, to=sid)
         await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
+        if state.get("status") == "finished":
+            await _close_finished_game(game_id)
