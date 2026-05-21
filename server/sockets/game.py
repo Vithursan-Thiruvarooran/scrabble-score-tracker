@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -15,6 +16,7 @@ from services.game_state import (
     apply_resolve_dispute,
 )
 from services.room import active_game_rooms
+from services.push import send_turn_notification
 from sockets import sio, socket_manager
 
 logger = logging.getLogger(__name__)
@@ -202,6 +204,10 @@ async def play_move(sid, data):
             await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
             if state.get("status") == "finished":
                 await _close_finished_game(game_id)
+            elif state.get("status") == "active":
+                next_player = state.get("turn")
+                if next_player and next_player != user_id:
+                    asyncio.ensure_future(send_turn_notification(next_player, game_id))
 
     except Exception as exc:
         logger.exception("play_move unhandled error: room=%s user=%s type=%s: %s", game_id, user_id, move_type, exc)
@@ -239,3 +245,7 @@ async def resolve_dispute(sid, data):
         await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
         if state.get("status") == "finished":
             await _close_finished_game(game_id)
+        elif state.get("status") == "active":
+            next_player = state.get("turn")
+            if next_player and next_player != user_id:
+                asyncio.ensure_future(send_turn_notification(next_player, game_id))

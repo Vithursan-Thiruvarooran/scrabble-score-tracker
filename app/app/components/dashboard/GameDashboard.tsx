@@ -8,6 +8,7 @@ import { AddFriendCard } from './AddFriendCard';
 import { NewGameCard } from './NewGameCard';
 import { NewGameForm } from './NewGameForm';
 import { CurrentGames } from './CurrentGames';
+import { NotificationBanner } from './NotificationBanner';
 import { useAuth } from '../../context/AuthContext';
 import { socket } from '../../socket';
 
@@ -112,6 +113,7 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
 
       <main className="flex-1 flex flex-col items-center overflow-hidden pb-4">
         <div className="w-full max-w-sm flex flex-col flex-1 min-h-0 gap-4">
+          <NotificationBanner />
           <AddFriendCard />
           <NewGameCard disabled={busy !== null} onOpen={handleOpenForm} />
           <div className="flex flex-col flex-1 min-h-0 gap-6">

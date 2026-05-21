@@ -17,6 +17,7 @@ import sockets.game  # noqa: F401 — registers socket event handlers
 from routes.auth import router as auth_router
 from routes.game import router as game_router
 from routes.users import router as users_router
+from routes.push import router as push_router
 
 
 @asynccontextmanager
@@ -30,6 +31,8 @@ async def lifespan(app: FastAPI):
     await db.moves.create_index([("game_id", 1), ("move_number", 1)], unique=True)
     await db.games.create_index([("user", 1), ("completed", 1)])
     await db.games.create_index([("opponent", 1), ("completed", 1)])
+    await db.push_subscriptions.create_index("user_id")
+    await db.push_subscriptions.create_index([("user_id", 1), ("endpoint", 1)], unique=True)
 
     # Restore in-memory room set from DB so active games survive server restarts
     active = await db.games.find({"completed": False}, {"_id": 1}).to_list(length=None)
@@ -58,6 +61,7 @@ app.mount("/socket.io", cast(ASGIApp, socket_app))
 app.include_router(auth_router)
 app.include_router(game_router)
 app.include_router(users_router)
+app.include_router(push_router)
 
 
 @app.get("/")
