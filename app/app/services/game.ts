@@ -54,7 +54,7 @@ export interface PendingDispute {
 
 export interface GameMove {
   move_number: number;
-  move_type: 'initial' | 'place' | 'pass' | 'recycle' | 'resign';
+  move_type: 'initial' | 'place' | 'pass' | 'recycle' | 'resign' | 'dispute';
   player: string | null;
   tiles: { row: number; col: number; letter: string; is_blank?: boolean }[];
   recycled: string[];

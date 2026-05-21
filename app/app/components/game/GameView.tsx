@@ -10,6 +10,7 @@ import { useGameRoom } from '../../hooks/useGameRoom';
 import { Link } from 'react-router';
 import type { GameState } from '../../services/game';
 import { GameBoard, type PendingPlacements } from './GameBoard';
+import { GameReview } from './GameReview';
 import { Rack } from './Rack';
 import { RecycleZone } from './RecycleZone';
 import { GameToolbar } from './GameToolbar';
@@ -425,7 +426,11 @@ export function GameView() {
           </div>
         )}
 
-        {!joinPending && !joinError && (
+        {!joinPending && !joinError && isFinished && gameState && (
+          <GameReview game={game} gameState={gameState} />
+        )}
+
+        {!joinPending && !joinError && !isFinished && (
           <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col justify-center px-1.5 py-1">
               <GameBoard board={gameState?.board} pendingPlacements={pendingPlacements} isValidPlay={isValidPlay} />
@@ -448,20 +453,22 @@ export function GameView() {
           </DndContext>
         )}
 
-        <GameToolbar
-          gameId={gameId}
-          pendingPlacements={pendingPlacements}
-          recycleIndices={recycleIndices}
-          myRack={myRack}
-          isValidPlay={isValidPlay}
-          isMyTurn={gameState?.turn === myUserId}
-          isGameActive={isGameActive && !isDisputePending}
-          isRecycleOpen={isRecycleOpen}
-          onPlayed={handlePlayed}
-          onRecycled={handleRecycled}
-          onRecall={handleRecall}
-          onToggleRecycle={handleToggleRecycle}
-        />
+        {!joinPending && !joinError && !isFinished && (
+          <GameToolbar
+            gameId={gameId}
+            pendingPlacements={pendingPlacements}
+            recycleIndices={recycleIndices}
+            myRack={myRack}
+            isValidPlay={isValidPlay}
+            isMyTurn={gameState?.turn === myUserId}
+            isGameActive={isGameActive && !isDisputePending}
+            isRecycleOpen={isRecycleOpen}
+            onPlayed={handlePlayed}
+            onRecycled={handleRecycled}
+            onRecall={handleRecall}
+            onToggleRecycle={handleToggleRecycle}
+          />
+        )}
       </div>
 
       {blankModalState && (

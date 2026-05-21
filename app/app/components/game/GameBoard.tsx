@@ -99,9 +99,10 @@ interface BoardCellProps {
   isBlank?: boolean;
   isValidPlay: boolean;
   squareType: SquareType;
+  highlightType?: 'valid' | 'invalid' | 'challenged';
 }
 
-function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareType }: BoardCellProps) {
+function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareType, highlightType }: BoardCellProps) {
   const occupied = letter !== null;
   const { setNodeRef, isOver } = useDroppable({
     id: `${row}-${col}`,
@@ -114,6 +115,12 @@ function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareTy
       bgClass = isValidPlay
         ? 'bg-amber-200 dark:bg-amber-300 ring-2 ring-inset ring-green-500'
         : 'bg-amber-200 dark:bg-amber-300 ring-2 ring-inset ring-blue-400';
+    } else if (highlightType === 'valid') {
+      bgClass = 'bg-green-200 dark:bg-green-300 ring-2 ring-inset ring-green-500';
+    } else if (highlightType === 'challenged') {
+      bgClass = 'bg-yellow-200 dark:bg-yellow-300 ring-2 ring-inset ring-yellow-500';
+    } else if (highlightType === 'invalid') {
+      bgClass = 'bg-red-200 dark:bg-red-300 ring-2 ring-inset ring-red-500';
     } else {
       bgClass = 'bg-amber-100 dark:bg-amber-200';
     }
@@ -154,9 +161,10 @@ interface GameBoardProps {
   board?: (string | null)[][] | null;
   pendingPlacements?: PendingPlacements;
   isValidPlay?: boolean;
+  highlightedCells?: Map<string, 'valid' | 'invalid' | 'challenged'>;
 }
 
-export function GameBoard({ board, pendingPlacements, isValidPlay = false }: GameBoardProps) {
+export function GameBoard({ board, pendingPlacements, isValidPlay = false, highlightedCells }: GameBoardProps) {
   const mergedBoard = useMemo(() => {
     const base = board ?? EMPTY_BOARD;
     return base.map((row, r) =>
@@ -187,6 +195,7 @@ export function GameBoard({ board, pendingPlacements, isValidPlay = false }: Gam
               isBlank={pendingPlacements?.[`${r}-${c}`]?.isBlank}
               isValidPlay={isValidPlay}
               squareType={getSquareType(r, c)}
+              highlightType={highlightedCells?.get(`${r}-${c}`)}
             />
           ))
         )}
