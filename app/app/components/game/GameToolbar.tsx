@@ -43,7 +43,10 @@ export function GameToolbar({
     setPendingMove(moveType);
     setError(null);
 
+    let timeout: ReturnType<typeof setTimeout>;
+
     function cleanup() {
+      clearTimeout(timeout);
       socket.off('play_move_ok', onOk);
       socket.off('play_error', onErr);
       setPendingMove(null);
@@ -57,7 +60,7 @@ export function GameToolbar({
       setError(payload.message ?? 'Move was rejected.');
     }
 
-    const timeout = setTimeout(() => {
+    timeout = setTimeout(() => {
       cleanup();
       setError('No response from server. Please try again.');
     }, 10_000);

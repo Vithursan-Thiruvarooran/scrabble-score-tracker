@@ -19,6 +19,7 @@ export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewG
   const [timeIncrement, setTimeIncrement] = useState(0);
   const [online, setOnline] = useState(true);
   const [disputes, setDisputes] = useState(false);
+  const [disputeTimeout, setDisputeTimeout] = useState(60);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -43,6 +44,7 @@ export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewG
       timeIncrement: turnTimer ? timeIncrement : null,
       online,
       disputes,
+      dispute_timeout: disputeTimeout,
     });
   }
 
@@ -131,6 +133,30 @@ export function NewGameForm({ loading, error, friends, onClose, onSubmit }: NewG
               onChange={setDisputes}
             />
           </div>
+
+          {disputes && (
+            <div className="mt-3 space-y-1.5">
+              <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                Dispute timeout
+              </label>
+              <div className="flex gap-2">
+                {[30, 60, 120, 300].map((secs) => (
+                  <button
+                    key={secs}
+                    type="button"
+                    onClick={() => setDisputeTimeout(secs)}
+                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors ${
+                      disputeTimeout === secs
+                        ? 'border-blue-500 bg-blue-500 text-white'
+                        : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    {secs < 60 ? `${secs}s` : `${secs / 60}m`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Duration + Increment — only shown when turn timer is on */}
           {turnTimer && (

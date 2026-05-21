@@ -4,13 +4,14 @@ import logging
 from typing import Optional
 
 from services.auth import decode_access_token
+from services.dispute_timers import cancel_dispute_timeout
 from services.game_state import (
     add_player_to_state,
     apply_place,
     apply_pass,
     apply_recycle,
     apply_resign,
-    get_game_state,
+    apply_resolve_dispute,
 )
 from services.room import active_game_rooms
 from sockets import sio, socket_manager
@@ -154,39 +155,75 @@ async def play_move(sid, data):
         await sio.emit("play_error", {"message": "game_id is required."}, to=sid)
         return
 
-    if move_type == "place":
-        tiles = data.get("tiles")
-        if not isinstance(tiles, list) or not tiles:
-            await sio.emit("play_error", {"message": "tiles (list) is required for a place move."}, to=sid)
+    try:
+        if move_type == "place":
+            tiles = data.get("tiles")
+            if not isinstance(tiles, list) or not tiles:
+                await sio.emit("play_error", {"message": "tiles (list) is required for a place move."}, to=sid)
+                return
+            state, error = await apply_place(game_id, user_id, tiles)
+
+        elif move_type == "pass":
+            state, error = await apply_pass(game_id, user_id)
+
+        elif move_type == "recycle":
+            tiles = data.get("tiles")
+            if not isinstance(tiles, list) or not tiles:
+                await sio.emit("play_error", {"message": "tiles (list of letters) is required for a recycle move."}, to=sid)
+                return
+            if not all(isinstance(t, str) for t in tiles):
+                await sio.emit("play_error", {"message": "tiles must be a list of letter strings for a recycle move."}, to=sid)
+                return
+            state, error = await apply_recycle(game_id, user_id, tiles)
+
+        elif move_type == "resign":
+            state, error = await apply_resign(game_id, user_id)
+
+        else:
+            await sio.emit("play_error", {"message": f"Unknown move_type '{move_type}'. Expected: place, pass, recycle, resign."}, to=sid)
             return
-        state, error = await apply_place(game_id, user_id, tiles)
 
-    elif move_type == "pass":
-        state, error = await apply_pass(game_id, user_id)
+        logger.info("play_move: room=%s user=%s type=%s error=%s", game_id, user_id, move_type, error)
 
-    elif move_type == "recycle":
-        tiles = data.get("tiles")
-        if not isinstance(tiles, list) or not tiles:
-            await sio.emit("play_error", {"message": "tiles (list of letters) is required for a recycle move."}, to=sid)
-            return
-        if not all(isinstance(t, str) for t in tiles):
-            await sio.emit("play_error", {"message": "tiles must be a list of letter strings for a recycle move."}, to=sid)
-            return
-        state, error = await apply_recycle(game_id, user_id, tiles)
+        if error:
+            await sio.emit("play_error", {"message": error}, to=sid)
+            if state:
+                await sio.emit("game_state", {"game_id": game_id, **state}, to=sid)
+        else:
+            await sio.emit("play_move_ok", {"message": "Move accepted.", "move_type": move_type}, to=sid)
+            await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
 
-    elif move_type == "resign":
-        state, error = await apply_resign(game_id, user_id)
+    except Exception as exc:
+        logger.exception("play_move unhandled error: room=%s user=%s type=%s: %s", game_id, user_id, move_type, exc)
+        await sio.emit("play_error", {"message": "An internal error occurred. Please try again."}, to=sid)
 
-    else:
-        await sio.emit("play_error", {"message": f"Unknown move_type '{move_type}'. Expected: place, pass, recycle, resign."}, to=sid)
+
+@sio.event
+async def resolve_dispute(sid, data):
+    user_id = await _require_auth(sid, "play_error")
+    if not user_id:
         return
 
-    logger.info("play_move: room=%s user=%s type=%s error=%s", game_id, user_id, move_type, error)
+    if not isinstance(data, dict):
+        await sio.emit("play_error", {"message": "Invalid payload."}, to=sid)
+        return
+
+    game_id = data.get("game_id")
+    if not isinstance(game_id, str) or not game_id:
+        await sio.emit("play_error", {"message": "game_id is required."}, to=sid)
+        return
+
+    dispute = bool(data.get("dispute", False))
+
+    cancel_dispute_timeout(game_id)
+    state, error = await apply_resolve_dispute(game_id, user_id, dispute)
+
+    logger.info("resolve_dispute: room=%s user=%s dispute=%s error=%s", game_id, user_id, dispute, error)
 
     if error:
         await sio.emit("play_error", {"message": error}, to=sid)
         if state:
             await sio.emit("game_state", {"game_id": game_id, **state}, to=sid)
     else:
-        await sio.emit("play_move_ok", {"message": "Move accepted.", "move_type": move_type}, to=sid)
+        await sio.emit("play_move_ok", {"message": "Dispute resolved.", "move_type": "resolve_dispute"}, to=sid)
         await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)

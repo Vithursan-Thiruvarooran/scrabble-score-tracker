@@ -15,6 +15,7 @@ class GameBase(BaseModel):
     timeIncrement: Optional[int] = None
     online: bool = True
     disputes: bool = False
+    dispute_timeout: int = 60
 
 
 class TilePlacement(BaseModel):
@@ -35,6 +36,20 @@ class GameMove(BaseModel):
     rack: List[str] = []
     tile_bag: List[str] = []
     timestamp: str
+    dispute_status: Optional[str] = None
+
+
+class PendingDispute(BaseModel):
+    player: str
+    opponent: str
+    score: int
+    word: str
+    all_words: List[str] = []
+    expires_at: str
+    tiles: List[dict] = []
+    rack_before: List[str] = []
+    move_number: int = 0
+    timestamp: str = ""
 
 
 class GameState(BaseModel):
@@ -48,6 +63,7 @@ class GameState(BaseModel):
     status: str
     winner: Optional[str] = None
     game_moves: List[GameMove] = []
+    pending_dispute: Optional[PendingDispute] = None
 
 
 class GameStateSummary(BaseModel):

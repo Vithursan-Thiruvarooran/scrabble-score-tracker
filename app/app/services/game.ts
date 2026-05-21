@@ -12,6 +12,7 @@ export interface CreateGameParams {
   timeIncrement: number | null;
   online: boolean;
   disputes: boolean;
+  dispute_timeout: number;
 }
 
 export interface GameStateSummary {
@@ -32,6 +33,7 @@ export interface Game {
   timeIncrement: number | null;
   online: boolean;
   disputes: boolean;
+  dispute_timeout: number;
   completed: boolean;
   winner: string | null;
   loser: string | null;
@@ -39,6 +41,15 @@ export interface Game {
   opponentScore: number;
   date: string;
   game_state: GameStateSummary | null;
+}
+
+export interface PendingDispute {
+  player: string;
+  opponent: string;
+  score: number;
+  word: string;
+  all_words: string[];
+  expires_at: string; // ISO datetime string
 }
 
 export interface GameMove {
@@ -53,6 +64,7 @@ export interface GameMove {
   rack: string[];
   tile_bag: string[];
   timestamp: string;
+  dispute_status?: 'not_disputed' | 'valid' | 'invalid';
 }
 
 export interface GameState {
@@ -66,6 +78,7 @@ export interface GameState {
   status: 'waiting' | 'active' | 'finished';
   winner: string | null;
   game_moves: GameMove[];
+  pending_dispute: PendingDispute | null;
 }
 
 export async function createGame(params: CreateGameParams, token: string): Promise<{ room: string }> {

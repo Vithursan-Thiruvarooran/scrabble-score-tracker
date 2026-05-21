@@ -98,7 +98,12 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
         "userScore": 0,
         "opponentScore": 0,
         "date": datetime.now(),
-        "game_state": build_initial_state(user_id),
+        "game_state": build_initial_state(
+            creator_id=user_id,
+            disputes=payload.disputes,
+            dispute_timeout=getattr(payload, "dispute_timeout", 60),
+            dictionary=getattr(payload, "dictionary", "TWL06"),
+        ),
 
     })
 

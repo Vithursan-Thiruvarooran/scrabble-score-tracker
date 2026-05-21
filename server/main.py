@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from db import connect_to_mongo, close_mongo_connection, get_db
+from services.dictionary import load_dictionaries
 from services.redis_cache import connect_to_redis, close_redis
 from services.room import active_game_rooms
 from sockets import sio
@@ -22,6 +23,7 @@ from routes.users import router as users_router
 async def lifespan(app: FastAPI):
     connect_to_mongo()
     await connect_to_redis()
+    load_dictionaries()
 
     db = get_db()
     await db.users.create_index("email", unique=True)

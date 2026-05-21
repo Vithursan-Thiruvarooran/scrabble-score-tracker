@@ -13,6 +13,7 @@ import { GameBoard, type PendingPlacements } from './GameBoard';
 import { Rack } from './Rack';
 import { RecycleZone } from './RecycleZone';
 import { GameToolbar } from './GameToolbar';
+import { DisputePrompt } from './DisputePrompt';
 import { useAuth } from '../../context/AuthContext';
 
 function validatePlay(
@@ -119,6 +120,7 @@ export function GameView() {
   }, []);
 
   const isGameActive = gameState?.status === 'active';
+  const isDisputePending = Boolean(gameState?.pending_dispute);
 
   function handleResign() {
     setShowResignDialog(false);
@@ -306,6 +308,16 @@ export function GameView() {
         </div>
       )}
 
+      {/* Dispute prompt — shown to the opponent */}
+      {gameState?.pending_dispute && myUserId === gameState.pending_dispute.opponent && (
+        <DisputePrompt
+          gameId={gameId}
+          words={gameState.pending_dispute.all_words}
+          score={gameState.pending_dispute.score}
+          expiresAt={gameState.pending_dispute.expires_at}
+        />
+      )}
+
       <div className="h-dvh flex flex-col overflow-hidden bg-white dark:bg-gray-950">
 
         {/* Header: top row (back + menu), second row (scores) */}
@@ -394,6 +406,15 @@ export function GameView() {
           )}
         </header>
 
+        {/* Waiting overlay — shown to the player who just placed while opponent decides */}
+        {gameState?.pending_dispute && myUserId === gameState.pending_dispute.player && (
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-100 dark:border-amber-900/50">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400 text-center">
+              Waiting for opponent to accept or dispute…
+            </p>
+          </div>
+        )}
+
         {leaveError && (
           <p className="px-4 py-2 text-sm text-red-600 dark:text-red-400">{leaveError}</p>
         )}
@@ -441,7 +462,7 @@ export function GameView() {
           myRack={myRack}
           isValidPlay={isValidPlay}
           isMyTurn={gameState?.turn === myUserId}
-          isGameActive={isGameActive}
+          isGameActive={isGameActive && !isDisputePending}
           isRecycleOpen={isRecycleOpen}
           onPlayed={handlePlayed}
           onRecycled={handleRecycled}
