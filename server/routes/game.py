@@ -4,10 +4,8 @@ from datetime import datetime
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-
 from db import get_db
-from models import GameBase, GameMove, GameOut, GameState, GameStateSummary
+from models import ChallengeResponse, GameBase, GameMove, GameOut, GameState, GameStateSummary
 from routes.auth import get_current_user
 from services.game_state import build_initial_state, get_game_state
 from services.push import send_challenge_notification
@@ -16,9 +14,6 @@ from services.room import active_game_rooms
 from sockets import sio, socket_manager
 from utils.helpers import user_doc_to_out, validate_object_id
 
-
-class ChallengeResponse(BaseModel):
-    accept: bool
 
 router = APIRouter(prefix="/game", dependencies=[Depends(get_current_user)])
 
@@ -111,8 +106,8 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
         "game_state": build_initial_state(
             creator_id=user_id,
             disputes=payload.disputes,
-            dispute_timeout=getattr(payload, "dispute_timeout", 60),
-            dictionary=getattr(payload, "dictionary", "TWL06"),
+            dispute_timeout=payload.dispute_timeout,
+            dictionary=payload.dictionary,
         ),
     })
 
@@ -133,7 +128,7 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
             {"game_id": game_id, "challenger_name": creator_name},
             to=opponent_sids[0],
         )
-    asyncio.ensure_future(send_challenge_notification(payload.opponent, game_id, creator_name))
+    asyncio.create_task(send_challenge_notification(payload.opponent, game_id, creator_name))
 
     game_doc = await db.games.find_one({"_id": result.inserted_id})
     results = await _games_to_out([game_doc], db)

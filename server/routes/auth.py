@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from db import get_db
-from models import AuthUserOut, TokenOut, UserLogin, UserRegister
+from models import TokenOut, UserLogin, UserOut, UserRegister
 from services.auth import create_access_token, decode_access_token, hash_password, verify_password
 from utils.helpers import user_doc_to_out
 
@@ -32,8 +32,8 @@ async def get_current_user(authorization: str = Header(default="")):
     return user
 
 
-def _to_auth_out(user: dict) -> AuthUserOut:
-    return AuthUserOut(
+def _to_auth_out(user: dict) -> UserOut:
+    return UserOut(
         id=str(user["_id"]),
         email=user["email"],
         firstname=user["firstname"],
@@ -42,7 +42,7 @@ def _to_auth_out(user: dict) -> AuthUserOut:
     )
 
 
-@router.post("/register", response_model=AuthUserOut, status_code=201)
+@router.post("/register", response_model=UserOut, status_code=201)
 async def register(payload: UserRegister):
     db = get_db()
     doc = payload.model_dump()
@@ -73,6 +73,6 @@ async def login(payload: UserLogin):
     return TokenOut(access_token=token)
 
 
-@router.get("/me", response_model=AuthUserOut)
+@router.get("/me", response_model=UserOut)
 async def me(current_user=Depends(get_current_user)):
     return _to_auth_out(current_user)

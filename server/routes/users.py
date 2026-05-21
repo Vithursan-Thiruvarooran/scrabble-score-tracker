@@ -1,21 +1,11 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from db import get_db
-from models import FriendOut, UserOut
+from models import AcceptFriendRequest, AddFriendRequest, FriendOut, UserOut
 from routes.auth import get_current_user
 from utils.helpers import user_doc_to_out, validate_object_id
-
-
-class AddFriendRequest(BaseModel):
-    friendId: str
-
-
-class AcceptFriendRequest(BaseModel):
-    id: str
-
 
 router = APIRouter(prefix="/users")
 

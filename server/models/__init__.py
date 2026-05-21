@@ -1,8 +1,12 @@
-from models.friend import FriendCreate, FriendOut
-from models.game import GameBase, GameMove, GameOut, GameState, GameStateSummary, TilePlacement
-from models.user import AuthUserOut, TokenOut, User, UserLogin, UserOut, UserRegister
+from models.friend import AddFriendRequest, AcceptFriendRequest, FriendCreate, FriendOut
+from models.game import ChallengeResponse, GameBase, GameMove, GameOut, GameState, GameStateSummary, TilePlacement
+from models.push import PushSubscriptionPayload
+from models.user import TokenOut, User, UserLogin, UserOut, UserRegister
 
 __all__ = [
+    "AcceptFriendRequest",
+    "AddFriendRequest",
+    "ChallengeResponse",
     "FriendCreate",
     "FriendOut",
     "GameBase",
@@ -10,8 +14,8 @@ __all__ = [
     "GameOut",
     "GameState",
     "GameStateSummary",
+    "PushSubscriptionPayload",
     "TilePlacement",
-    "AuthUserOut",
     "TokenOut",
     "User",
     "UserLogin",

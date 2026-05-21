@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 from models.user import UserOut
 
 
+class ChallengeResponse(BaseModel):
+    accept: bool
+
+
 class GameBase(BaseModel):
     opponent: str
     dictionary: str = "TWL06"

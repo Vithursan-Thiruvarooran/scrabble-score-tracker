@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
-import { TILE_VALUES } from '../../utils/tiles';
+import { isBlankTile, TILE_VALUES } from '../../utils/tiles';
 
 interface RackSlotProps {
   letter: string;
@@ -10,7 +10,7 @@ interface RackSlotProps {
 }
 
 function RackSlot({ letter, originalIndex, slotIndex, isPlaced }: RackSlotProps) {
-  const isBlank = letter === '' || letter === ' ' || letter === '?';
+  const isBlank = isBlankTile(letter);
 
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: `rack-${originalIndex}`,

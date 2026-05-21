@@ -24,11 +24,3 @@ class UserLogin(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
-
-
-class AuthUserOut(BaseModel):
-    id: str
-    email: EmailStr
-    firstname: str
-    lastname: str
-    admin: bool

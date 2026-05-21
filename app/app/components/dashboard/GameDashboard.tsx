@@ -12,6 +12,7 @@ import { NotificationBanner } from './NotificationBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { socket } from '../../socket';
+import { useSocketStatus } from '../../hooks/useSocketStatus';
 
 interface GameDashboardProps {
   onLogout: () => void;
@@ -26,15 +27,7 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
   const [createError, setCreateError] = useState<string | null>(null);
   const [friends, setFriends] = useState<GameUser[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [socketConnected, setSocketConnected] = useState(socket.connected);
-
-  useEffect(() => {
-    function onConnect() { setSocketConnected(true); }
-    function onDisconnect() { setSocketConnected(false); }
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); };
-  }, []);
+  const socketConnected = useSocketStatus();
 
   useEffect(() => {
     function onChallenge({ game_id, challenger_name }: { game_id: string; challenger_name: string }) {

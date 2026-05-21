@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { socket, connectSocket } from '../../socket';
+import { useMemo, useRef, useState } from 'react';
+import { TILE_VALUES } from '../../utils/tiles';
+import { socket } from '../../socket';
 import { useParams } from 'react-router';
 import {
   DndContext, DragOverlay, PointerSensor,
@@ -17,6 +18,7 @@ import { RecycleZone } from './RecycleZone';
 import { GameToolbar } from './GameToolbar';
 import { DisputePrompt } from './DisputePrompt';
 import { useAuth } from '../../context/AuthContext';
+import { useSocketStatus } from '../../hooks/useSocketStatus';
 
 function validatePlay(
   pendingPlacements: PendingPlacements,
@@ -111,15 +113,7 @@ export function GameView() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showResignDialog, setShowResignDialog] = useState(false);
   const [resignPending, setResignPending] = useState(false);
-  const [socketConnected, setSocketConnected] = useState(socket.connected);
-
-  useEffect(() => {
-    function onConnect() { setSocketConnected(true); }
-    function onDisconnect() { setSocketConnected(false); }
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); };
-  }, []);
+  const socketConnected = useSocketStatus();
 
   const isGameActive = gameState?.status === 'active';
   const isDisputePending = Boolean(gameState?.pending_dispute);
@@ -548,12 +542,6 @@ function PlayerScoreChip({
     </div>
   );
 }
-
-const TILE_VALUES: Record<string, number> = {
-  A: 1, B: 3, C: 3, D: 2, E: 1, F: 4, G: 2, H: 4, I: 1, J: 8,
-  K: 5, L: 1, M: 3, N: 1, O: 1, P: 3, Q: 10, R: 1, S: 1, T: 1,
-  U: 1, V: 4, W: 4, X: 8, Y: 4, Z: 10,
-};
 
 function FloatingTile({ letter, isBlank }: { letter: string; isBlank?: boolean }) {
   const isRawBlank = letter === '?';

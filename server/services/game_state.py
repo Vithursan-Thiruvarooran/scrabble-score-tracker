@@ -127,21 +127,7 @@ async def add_player_to_state(game_id: str, player_id: str) -> Optional[dict]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-async def _load_state(game_id: str) -> Optional[dict]:
-    state = await get_cached_state(game_id)
-    if state is not None:
-        return state
-    db = get_db()
-    doc = await db.games.find_one({"_id": ObjectId(game_id)}, {"game_state": 1})
-    if not doc:
-        return None
-    state = doc.get("game_state")
-    if state:
-        await cache_state(game_id, state)
-    return state
-
-
-async def _persist(game_id: str, state: dict) -> None:
+async def _persist(game_id: str, state: dict, dispute_move_number: Optional[int] = None) -> None:
     """Fast-write to Redis, then durably persist to MongoDB."""
     await cache_state(game_id, state)
     db = get_db()
@@ -163,7 +149,25 @@ async def _persist(game_id: str, state: dict) -> None:
     await db.games.update_one({"_id": ObjectId(game_id)}, {"$set": fields})
 
     moves = state.get("game_moves", [])
-    if moves:
+    if dispute_move_number is not None:
+        place_move = next((m for m in moves if m.get("move_number") == dispute_move_number), None)
+        if place_move:
+            move_doc = {"game_id": game_id, "user_id": place_move.get("player"), **place_move}
+            await db.moves.update_one(
+                {"game_id": game_id, "move_number": dispute_move_number},
+                {"$set": move_doc},
+                upsert=True,
+            )
+        if moves:
+            last_move = moves[-1]
+            if last_move.get("move_type") == "dispute":
+                move_doc = {"game_id": game_id, "user_id": last_move.get("player"), **last_move}
+                await db.moves.update_one(
+                    {"game_id": game_id, "move_number": last_move["move_number"]},
+                    {"$set": move_doc},
+                    upsert=True,
+                )
+    elif moves:
         last_move = moves[-1]
         if last_move.get("move_type") != "initial":
             move_doc = {"game_id": game_id, "user_id": last_move.get("player"), **last_move}
@@ -216,48 +220,6 @@ def _revert_pending_place(state: dict, pending: dict) -> None:
     state["racks"][pending["player"]] = list(pending["rack_before"])
 
 
-async def _persist_dispute(game_id: str, state: dict, place_move_number: int) -> None:
-    """Persist state and upsert both the place move and (if present) the dispute move."""
-    await cache_state(game_id, state)
-    db = get_db()
-    fields: dict = {"game_state": state}
-    if state.get("status") == "finished":
-        game = await db.games.find_one({"_id": ObjectId(game_id)}, {"user": 1, "opponent": 1})
-        if game:
-            scores = state.get("scores", {})
-            winner_id = state.get("winner")
-            players: List[str] = state.get("players", [])
-            loser_id = next((p for p in players if p != winner_id), None) if winner_id else None
-            fields.update({
-                "completed": True,
-                "winner": winner_id,
-                "loser": loser_id,
-                "userScore": scores.get(game["user"], 0),
-                "opponentScore": scores.get(game["opponent"], 0),
-            })
-    await db.games.update_one({"_id": ObjectId(game_id)}, {"$set": fields})
-
-    moves = state.get("game_moves", [])
-    # Upsert place move
-    place_move = next((m for m in moves if m.get("move_number") == place_move_number), None)
-    if place_move:
-        move_doc = {"game_id": game_id, "user_id": place_move.get("player"), **place_move}
-        await db.moves.update_one(
-            {"game_id": game_id, "move_number": place_move_number},
-            {"$set": move_doc},
-            upsert=True,
-        )
-    # Upsert dispute move (last move, if it's a dispute type)
-    if moves:
-        last_move = moves[-1]
-        if last_move.get("move_type") == "dispute":
-            move_doc = {"game_id": game_id, "user_id": last_move.get("player"), **last_move}
-            await db.moves.update_one(
-                {"game_id": game_id, "move_number": last_move["move_number"]},
-                {"$set": move_doc},
-                upsert=True,
-            )
-
 
 # ---------------------------------------------------------------------------
 # Public move handlers — each returns (updated_state_or_current, error_or_None)
@@ -268,7 +230,7 @@ async def apply_place(
     player_id: str,
     tiles: List[dict],
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await _load_state(game_id)
+    state = await get_game_state(game_id)
     if not state:
         return None, "Game not found."
     status = state.get("status")
@@ -387,7 +349,7 @@ async def apply_pass(
     game_id: str,
     player_id: str,
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await _load_state(game_id)
+    state = await get_game_state(game_id)
     if not state:
         return None, "Game not found."
     if state.get("status") != "active":
@@ -425,7 +387,7 @@ async def apply_recycle(
     player_id: str,
     letters: List[str],
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await _load_state(game_id)
+    state = await get_game_state(game_id)
     if not state:
         return None, "Game not found."
     if state.get("status") != "active":
@@ -482,7 +444,7 @@ async def apply_resign(
     game_id: str,
     player_id: str,
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await _load_state(game_id)
+    state = await get_game_state(game_id)
     if not state:
         return None, "Game not found."
     if state.get("status") != "active":
@@ -523,7 +485,7 @@ async def apply_resolve_dispute(
     resolver_id=None means the auto-accept timer fired.
     dispute=False → accept move. dispute=True → challenge.
     """
-    state = await _load_state(game_id)
+    state = await get_game_state(game_id)
     if not state:
         return None, "Game not found."
 
@@ -595,5 +557,5 @@ async def apply_resolve_dispute(
             "timestamp": now_str,
         })
 
-    await _persist_dispute(game_id, state, move_number)
+    await _persist(game_id, state, dispute_move_number=move_number)
     return state, None

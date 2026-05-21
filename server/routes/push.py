@@ -2,18 +2,12 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from db import get_db
+from models import PushSubscriptionPayload
 from routes.auth import get_current_user
 
 router = APIRouter(prefix="/push")
-
-
-class PushSubscriptionPayload(BaseModel):
-    endpoint: str
-    p256dh: str
-    auth: str
 
 
 @router.get("/public-key")

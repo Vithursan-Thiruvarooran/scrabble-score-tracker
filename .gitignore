@@ -19,3 +19,7 @@ Thumbs.db
 
 #VSCode
 .vscode/
+
+server/board_detection/*
+
+venvScriptsactivate
