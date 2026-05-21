@@ -19,6 +19,7 @@ export function useGameRoom(gameId: string | undefined) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const gameIdRef = useRef(gameId);
   gameIdRef.current = gameId;
+  const socketCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!gameId) {
@@ -28,46 +29,76 @@ export function useGameRoom(gameId: string | undefined) {
 
     setJoinPending(true);
     setJoinError(null);
+    socketCleanupRef.current = null;
+    let cancelled = false;
 
-    const onJoinOk = () => {
-      setJoinPending(false);
-      setJoinError(null);
-    };
+    gameService.getGame(gameId, token)
+      .then(fetchedGame => {
+        if (cancelled) return;
+        setGame(fetchedGame);
 
-    const onJoinErr = (payload: { message?: string }) => {
-      setJoinPending(false);
-      setJoinError(payload.message ?? 'Could not join this game.');
-    };
+        if (fetchedGame.completed) {
+          // Finished game: load state via REST, no socket join needed
+          gameService.getGameState(gameId, token)
+            .then(state => { if (!cancelled) { setGameState(state); setJoinPending(false); } })
+            .catch(() => { if (!cancelled) { setJoinPending(false); setJoinError('Could not load game state.'); } });
+          return;
+        }
 
-    const doJoin = () => {
-      socket.off('joined_game', onJoinOk);
-      socket.off('join_error', onJoinErr);
-      socket.once('joined_game', onJoinOk);
-      socket.once('join_error', onJoinErr);
-      socket.emit('joinGame', { game_id: gameId });
-    };
+        // Active game: socket join path
+        if (!token) {
+          navigate('/', { replace: true });
+          return;
+        }
 
-    if (socket.connected) {
-      doJoin();
-    } else if (!token) {
-      navigate('/', { replace: true });
-    } else {
-      socket.once('connect', doJoin);
-    }
+        const onJoinOk = () => {
+          if (cancelled) return;
+          setJoinPending(false);
+          setJoinError(null);
+          gameService.getGameState(gameId, token)
+            .then(s => { if (!cancelled) setGameState(s); })
+            .catch(() => {});
+        };
+
+        const onJoinErr = (payload: { message?: string }) => {
+          if (cancelled) return;
+          setJoinPending(false);
+          setJoinError(payload.message ?? 'Could not join this game.');
+        };
+
+        const doJoin = () => {
+          socket.off('joined_game', onJoinOk);
+          socket.off('join_error', onJoinErr);
+          socket.once('joined_game', onJoinOk);
+          socket.once('join_error', onJoinErr);
+          socket.emit('joinGame', { game_id: gameId });
+        };
+
+        socketCleanupRef.current = () => {
+          socket.off('connect', doJoin);
+          socket.off('joined_game', onJoinOk);
+          socket.off('join_error', onJoinErr);
+        };
+
+        if (socket.connected) {
+          doJoin();
+        } else {
+          socket.once('connect', doJoin);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setJoinPending(false);
+          setJoinError('Could not load game.');
+        }
+      });
 
     return () => {
-      socket.off('connect', doJoin);
-      socket.off('joined_game', onJoinOk);
-      socket.off('join_error', onJoinErr);
+      cancelled = true;
+      socketCleanupRef.current?.();
+      socketCleanupRef.current = null;
     };
   }, [gameId, token, navigate]);
-
-  useEffect(() => {
-    if (!joinPending && !joinError && gameId) {
-      gameService.getGame(gameId, token).then(setGame).catch(() => {});
-      gameService.getGameState(gameId, token).then(setGameState).catch(() => {});
-    }
-  }, [joinPending, joinError, gameId, token]);
 
   useEffect(() => {
     function onGameState(data: GameState) {
@@ -90,6 +121,13 @@ export function useGameRoom(gameId: string | undefined) {
       navigate('/');
       return;
     }
+
+    // Completed games were never joined via socket — just go home
+    if (game?.completed) {
+      navigate('/');
+      return;
+    }
+
     setLeaveError(null);
 
     const goHome = () => {
@@ -118,7 +156,7 @@ export function useGameRoom(gameId: string | undefined) {
     socket.once('left_game', onLeft);
     socket.once('leave_error', onErr);
     socket.emit('leaveGame', { game_id: gameId });
-  }, [gameId, navigate]);
+  }, [gameId, navigate, game]);
 
   return { joinPending, joinError, leavePending, leaveError, game, gameState, leaveGame };
 }
