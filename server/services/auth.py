@@ -6,6 +6,8 @@ import os
 import secrets
 import time
 
+_TOKEN_EXPIRY = int(os.getenv("TOKEN_EXPIRY_SECONDS", str(60 * 60 * 24)))
+
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
@@ -26,10 +28,16 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 
 def _get_secret() -> str:
-    return os.getenv("AUTH_SECRET", "dev-only-change-me")
+    secret = os.getenv("AUTH_SECRET", "")
+    if not secret or secret == "dev-only-change-me":
+        raise RuntimeError(
+            "AUTH_SECRET env var must be set to a long random string. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    return secret
 
 
-def create_access_token(user_id: str, expires_in_seconds: int = 60 * 60 * 24) -> str:
+def create_access_token(user_id: str, expires_in_seconds: int = _TOKEN_EXPIRY) -> str:
     expiry = int(time.time()) + expires_in_seconds
     payload = f"{user_id}:{expiry}"
     signature = hmac.new(

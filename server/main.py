@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -10,7 +12,7 @@ from starlette.types import ASGIApp
 
 from db import connect_to_mongo, close_mongo_connection, get_db
 from services.dictionary import load_dictionaries
-from services.redis_cache import connect_to_redis, close_redis
+from services.redis_cache import connect_to_redis, close_redis, get_redis
 from services.room import active_game_rooms
 from sockets import sio
 import sockets.game  # noqa: F401 — registers socket event handlers
@@ -18,6 +20,23 @@ from routes.auth import router as auth_router
 from routes.game import router as game_router
 from routes.users import router as users_router
 from routes.push import router as push_router
+
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+_cors_raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
+_cors_origins = (
+    [o.strip() for o in _cors_raw.split(",") if o.strip()]
+    if _cors_raw
+    else [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ]
+)
 
 
 @asynccontextmanager
@@ -49,7 +68,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,7 +83,17 @@ app.include_router(users_router)
 app.include_router(push_router)
 
 
-@app.get("/")
-async def root():
-    print("GET /")
-    return {"foo": "hello message from server"}
+@app.get("/health")
+async def health():
+    status: dict = {"status": "ok", "db": "ok", "cache": "ok"}
+    try:
+        await get_db().command("ping")
+    except Exception:
+        status["db"] = "error"
+        status["status"] = "degraded"
+    try:
+        await get_redis().ping()
+    except Exception:
+        status["cache"] = "error"
+        status["status"] = "degraded"
+    return status

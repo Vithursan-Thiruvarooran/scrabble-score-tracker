@@ -8,14 +8,18 @@ import redis.asyncio as aioredis
 
 _redis: Optional[aioredis.Redis] = None
 
-# Game state keys expire after 2 hours — long enough for any Scrabble game
-_STATE_TTL = 7200
+_STATE_TTL = int(os.getenv("REDIS_STATE_TTL", "7200"))
 
 
 async def connect_to_redis() -> None:
     global _redis
     url = os.getenv("REDIS_URL", "redis://localhost:6379")
-    _redis = await aioredis.from_url(url, decode_responses=True)
+    _redis = await aioredis.from_url(
+        url,
+        decode_responses=True,
+        socket_connect_timeout=int(os.getenv("REDIS_CONNECT_TIMEOUT", "5")),
+        socket_timeout=int(os.getenv("REDIS_SOCKET_TIMEOUT", "5")),
+    )
 
 
 async def close_redis() -> None:
