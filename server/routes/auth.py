@@ -1,8 +1,9 @@
 from bson import ObjectId
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pymongo.errors import DuplicateKeyError
 
 from db import get_db
+from limiter import limiter
 from models import TokenOut, UserLogin, UserOut, UserRegister
 from services.auth import create_access_token, decode_access_token, hash_password, verify_password
 from utils.helpers import user_doc_to_out
@@ -43,7 +44,8 @@ def _to_auth_out(user: dict) -> UserOut:
 
 
 @router.post("/register", response_model=UserOut, status_code=201)
-async def register(payload: UserRegister):
+@limiter.limit("5/minute")
+async def register(request: Request, payload: UserRegister):
     db = get_db()
     doc = payload.model_dump()
     password = doc.pop("password")
@@ -59,7 +61,8 @@ async def register(payload: UserRegister):
 
 
 @router.post("/login", response_model=TokenOut)
-async def login(payload: UserLogin):
+@limiter.limit("10/minute")
+async def login(request: Request, payload: UserLogin):
     db = get_db()
     user = await db.users.find_one({"email": payload.email})
 

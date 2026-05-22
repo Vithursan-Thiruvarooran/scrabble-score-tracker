@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 _word_sets: dict[str, set] = {}
 
@@ -12,6 +15,8 @@ def load_dictionaries() -> None:
         path = data_dir / f"{name}.txt"
         if path.exists():
             _word_sets[name] = {w.strip().upper() for w in path.read_text().splitlines() if w.strip()}
+        else:
+            logger.warning("Dictionary file not found: %s — word validation disabled for %s", path, name)
 
 
 def validate_words(words: List[str], dictionary: str = "TWL06") -> bool:

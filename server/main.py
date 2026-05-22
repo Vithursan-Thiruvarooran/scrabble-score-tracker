@@ -6,13 +6,17 @@ from contextlib import asynccontextmanager
 from typing import cast
 
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from starlette.types import ASGIApp
 
 from db import connect_to_mongo, close_mongo_connection, get_db
 from services.dictionary import load_dictionaries
 from services.redis_cache import connect_to_redis, close_redis, get_redis
+from limiter import limiter
+from services.dispute_timers import cancel_all as cancel_all_dispute_timers
 from services.room import active_game_rooms
 from sockets import sio
 import sockets.game  # noqa: F401 — registers socket event handlers
@@ -52,6 +56,7 @@ async def lifespan(app: FastAPI):
     await db.games.create_index([("opponent", 1), ("completed", 1)])
     await db.push_subscriptions.create_index("user_id")
     await db.push_subscriptions.create_index([("user_id", 1), ("endpoint", 1)], unique=True)
+    await db.games.create_index([("date", -1)])
 
     # Restore in-memory room set from DB so active games survive server restarts
     active = await db.games.find({"completed": False}, {"_id": 1}).to_list(length=None)
@@ -60,11 +65,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    cancel_all_dispute_timers()
     await close_redis()
     close_mongo_connection()
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,4 +104,6 @@ async def health():
     except Exception:
         status["cache"] = "error"
         status["status"] = "degraded"
+    if status["status"] != "ok":
+        raise HTTPException(status_code=503, detail=status)
     return status

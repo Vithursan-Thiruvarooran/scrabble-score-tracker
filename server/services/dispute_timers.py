@@ -40,3 +40,11 @@ def cancel_dispute_timeout(game_id: str) -> None:
     if task and not task.done():
         task.cancel()
         logger.info("dispute timer cancelled: game=%s", game_id)
+
+
+def cancel_all() -> None:
+    for game_id, task in list(_tasks.items()):
+        if not task.done():
+            task.cancel()
+    _tasks.clear()
+    logger.info("all dispute timers cancelled")
