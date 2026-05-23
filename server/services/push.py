@@ -11,6 +11,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
 VAPID_SUBJECT = os.getenv("VAPID_CONTACT_EMAIL", "mailto:admin@example.com")
+_BASE_PATH = os.getenv("APP_BASE_PATH", "").rstrip("/")
 
 
 async def _send_push_to_user(user_id: str, payload_dict: dict) -> None:
@@ -62,7 +63,7 @@ async def send_turn_notification(user_id: str, game_id: str) -> None:
     await _send_push_to_user(user_id, {
         "title": "Your turn!",
         "body": "Your opponent has played. It's your move.",
-        "url": f"/game/{game_id}",
+        "url": f"{_BASE_PATH}/game/{game_id}",
         "game_id": game_id,
     })
 
@@ -72,6 +73,6 @@ async def send_challenge_notification(user_id: str, game_id: str, challenger_nam
     await _send_push_to_user(user_id, {
         "title": "New challenge!",
         "body": f"{challenger_name} challenged you to a game.",
-        "url": f"/game/{game_id}",
+        "url": f"{_BASE_PATH}/game/{game_id}",
         "game_id": game_id,
     })
