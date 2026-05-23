@@ -2,12 +2,13 @@
   "name": "Scrabble Score Tracker",
   "short_name": "Scrabble",
   "description": "Track Scrabble scores and play in real time",
-  "start_url": "/",
+  "start_url": "/scrabble/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
+  "scope": "/scrabble/",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/scrabble/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/scrabble/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }

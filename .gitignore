@@ -13,6 +13,9 @@ app/node_modules/
 app/build/
 app/.cache/
 
+# SSL certs (never commit private keys)
+nginx/certs/
+
 # OS
 .DS_Store
 Thumbs.db

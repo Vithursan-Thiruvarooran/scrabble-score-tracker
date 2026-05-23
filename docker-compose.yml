@@ -1,0 +1,26 @@
+services:
+  scrabble-api:
+    container_name: scrabble-api
+    build: ./server
+    restart: unless-stopped
+    env_file: ./server/.env
+    environment:
+      REDIS_URL: redis://redis-cache:6379
+    ports:
+      - 8001:8001
+    networks:
+      - default
+      - scrabble_proxy
+      - redis_proxy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  scrabble_proxy:
+    name: scrabble_proxy
+  redis_proxy:
+    external: true

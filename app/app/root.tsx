@@ -15,7 +15,7 @@ import { NotificationProvider } from "./context/NotificationContext";
 import { Toaster } from "./components/Toaster";
 
 export const links: Route.LinksFunction = () => [
-  { rel: "manifest", href: "/manifest.json" },
+  { rel: "manifest", href: `${import.meta.env.BASE_URL}manifest.json` },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
@@ -35,7 +35,7 @@ export const links: Route.LinksFunction = () => [
 export function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
     }
   }, []);
 

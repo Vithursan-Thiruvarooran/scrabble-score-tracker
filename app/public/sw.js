@@ -9,8 +9,8 @@ self.addEventListener('push', event => {
       if (focused) return;
       return self.registration.showNotification(data.title ?? 'Scrabble', {
         body: data.body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
+        icon: '/scrabble/icons/icon-192.png',
+        badge: '/scrabble/icons/icon-192.png',
         data: { url: data.url ?? '/' },
       });
     })
