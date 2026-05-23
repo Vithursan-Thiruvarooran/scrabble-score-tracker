@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -12,6 +11,7 @@ import type { Route } from "./+types/root";
 import "./app.css";
 import { AuthProvider } from "./context/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { ServiceWorkerUpdateProvider } from "./context/ServiceWorkerUpdateContext";
 import { Toaster } from "./components/Toaster";
 
 export const links: Route.LinksFunction = () => [
@@ -33,12 +33,6 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
-    }
-  }, []);
-
   return (
     <html lang="en">
       <head>
@@ -63,8 +57,10 @@ export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <Outlet />
-        <Toaster />
+        <ServiceWorkerUpdateProvider>
+          <Outlet />
+          <Toaster />
+        </ServiceWorkerUpdateProvider>
       </NotificationProvider>
     </AuthProvider>
   );

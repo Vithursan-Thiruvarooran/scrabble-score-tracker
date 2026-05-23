@@ -19,6 +19,7 @@ import { GameToolbar } from './GameToolbar';
 import { DisputePrompt } from './DisputePrompt';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketStatus } from '../../hooks/useSocketStatus';
+import { useSwUpdate } from '../../context/ServiceWorkerUpdateContext';
 
 function validatePlay(
   pendingPlacements: PendingPlacements,
@@ -114,6 +115,7 @@ export function GameView() {
   const [showResignDialog, setShowResignDialog] = useState(false);
   const [resignPending, setResignPending] = useState(false);
   const socketConnected = useSocketStatus();
+  const { updateAvailable, applyUpdate } = useSwUpdate();
 
   const isGameActive = gameState?.status === 'active';
   const isDisputePending = Boolean(gameState?.pending_dispute);
@@ -351,7 +353,7 @@ export function GameView() {
             <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Scoreboard</span>
 
             <div className="shrink-0 relative">
-              {isGameActive && (
+              {(isGameActive || updateAvailable) && (
                 <>
                   <button
                     type="button"
@@ -365,27 +367,46 @@ export function GameView() {
                       <rect y="12.5" width="16" height="1.5" rx="0.75" />
                     </svg>
                   </button>
-                  <div
-                    className={`absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-white dark:border-gray-950 pointer-events-none ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
-                    title={socketConnected ? 'Connected' : 'Disconnected'}
-                  />
+                  {isGameActive && (
+                    <div
+                      className={`absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-white dark:border-gray-950 pointer-events-none ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
+                      title={socketConnected ? 'Connected' : 'Disconnected'}
+                    />
+                  )}
+                  {updateAvailable && (
+                    <div
+                      className="absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-white dark:border-gray-950 bg-blue-500 pointer-events-none"
+                      title="Update available"
+                    />
+                  )}
                   {menuOpen && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                       <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
-                        <button
-                          type="button"
-                          onClick={() => { setMenuOpen(false); setShowResignDialog(true); }}
-                          className="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                        >
-                          Resign
-                        </button>
+                        {updateAvailable && (
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); applyUpdate(); }}
+                            className="w-full px-4 py-3 text-left text-sm text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                          >
+                            Update available — Reload
+                          </button>
+                        )}
+                        {isGameActive && (
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); setShowResignDialog(true); }}
+                            className="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                          >
+                            Resign
+                          </button>
+                        )}
                       </div>
                     </>
                   )}
                 </>
               )}
-              {!isGameActive && (
+              {!isGameActive && !updateAvailable && (
                 <div className="w-10 h-10 -mr-1" />
               )}
             </div>

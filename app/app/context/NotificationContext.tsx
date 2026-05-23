@@ -2,8 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 
 export interface ToastOptions {
   message: string;
-  action?: { label: string; to: string };
+  action?: { label: string; to?: string; onClick?: () => void };
   key?: string;
+  persistent?: boolean;
 }
 
 interface Toast extends ToastOptions {
@@ -47,12 +48,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (opts.key) activeKeysRef.current.add(opts.key);
     const id = ++counterRef.current;
     setToasts((prev) => [...prev, { id, ...opts }]);
-    const timeout = setTimeout(() => {
-      if (opts.key) activeKeysRef.current.delete(opts.key);
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-      timeoutsRef.current.delete(id);
-    }, AUTO_DISMISS_MS);
-    timeoutsRef.current.set(id, timeout);
+    if (!opts.persistent) {
+      const timeout = setTimeout(() => {
+        if (opts.key) activeKeysRef.current.delete(opts.key);
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+        timeoutsRef.current.delete(id);
+      }, AUTO_DISMISS_MS);
+      timeoutsRef.current.set(id, timeout);
+    }
   }, []);
 
   return (

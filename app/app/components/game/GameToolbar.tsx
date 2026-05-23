@@ -33,6 +33,7 @@ export function GameToolbar({
 }: GameToolbarProps) {
   const [pendingMove, setPendingMove] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPassConfirm, setShowPassConfirm] = useState(false);
 
   useEffect(() => {
     setError(null);
@@ -94,7 +95,6 @@ export function GameToolbar({
   const canAct = isMyTurn && isGameActive && !isBusy;
   const hasExchangeTiles = isRecycleOpen && recycleIndices.length > 0;
 
-  // Exchange can always be clicked to close an empty zone; needs canAct otherwise
   const exchangeDisabled = isBusy || (!canAct && !(isRecycleOpen && !hasExchangeTiles));
 
   function handleExchangeClick() {
@@ -106,21 +106,102 @@ export function GameToolbar({
   }
 
   return (
-    <div className="shrink-0 border-t border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-950 pb-safe">
-      {error && (
-        <p className="px-4 pt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+    <>
+      {showPassConfirm && (
+        <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl bg-white dark:bg-gray-900 shadow-2xl p-6 space-y-4">
+            <div className="space-y-1">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Skip your turn?</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                You won't place any tiles this turn.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowPassConfirm(false)}
+                className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowPassConfirm(false); handlePass(); }}
+                disabled={isBusy}
+                className="flex-1 rounded-xl bg-gray-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-900 active:bg-black disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white transition-colors"
+              >
+                {pendingMove === 'pass' ? 'Passing…' : 'Skip turn'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-      <div className="flex items-stretch gap-2 px-4 py-3">
 
-        {/* Secondary actions — icon above label, equal width */}
-        <div className="flex gap-2">
+      <div className="shrink-0 border-t border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-950 pb-safe">
+        {error && (
+          <p className="px-4 pt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+        )}
 
-          {/* Recall */}
+        <div className="flex items-stretch gap-2 px-4 py-3">
+
+          {/* Left cluster: Pass + Exchange */}
+          <div className="flex gap-2 shrink-0">
+
+            {/* Pass */}
+            <button
+              type="button"
+              onClick={() => setShowPassConfirm(true)}
+              disabled={!canAct}
+              className="flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 4 15 12 5 20 5 4"/>
+                <line x1="19" y1="5" x2="19" y2="19"/>
+              </svg>
+              <span className="text-[10px] font-semibold leading-none">
+                {pendingMove === 'pass' ? 'Passing…' : 'Pass'}
+              </span>
+            </button>
+
+            {/* Exchange */}
+            <button
+              type="button"
+              onClick={handleExchangeClick}
+              disabled={exchangeDisabled}
+              className={`flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                isRecycleOpen
+                  ? 'border-gray-300 bg-gray-100 text-gray-800 hover:bg-gray-150 active:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 active:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+              }`}
+            >
+              {hasExchangeTiles ? (
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 1l4 4-4 4"/>
+                  <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                  <path d="M7 23l-4-4 4-4"/>
+                  <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                </svg>
+              )}
+              <span className="text-[10px] font-semibold leading-none">
+                {pendingMove === 'recycle'
+                  ? 'Sending…'
+                  : hasExchangeTiles
+                  ? `Submit ${recycleIndices.length}`
+                  : 'Exchange'}
+              </span>
+            </button>
+          </div>
+
+          {/* Recall — sits just before Play */}
           <button
             type="button"
             onClick={onRecall}
             disabled={isBusy || !hasStagedTiles}
-            className="flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -129,65 +210,32 @@ export function GameToolbar({
             <span className="text-[10px] font-semibold leading-none">Recall</span>
           </button>
 
-          {/* Exchange / Submit */}
+          {/* Play — primary, takes remaining width */}
           <button
             type="button"
-            onClick={handleExchangeClick}
-            disabled={exchangeDisabled}
-            className={`flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border transition disabled:opacity-30 disabled:cursor-not-allowed ${
-              isRecycleOpen
-                ? 'border-orange-500 bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700'
-                : 'border-orange-300 bg-white text-orange-500 hover:bg-orange-50 active:bg-orange-100 dark:border-orange-700 dark:bg-gray-800 dark:text-orange-400 dark:hover:bg-orange-950/30'
-            }`}
+            onClick={handlePlay}
+            disabled={isBusy || !isMyTurn || !isValidPlay || !isGameActive}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-base font-bold text-white shadow-sm transition-colors hover:bg-green-700 active:bg-green-800 disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            {hasExchangeTiles ? (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
+            {pendingMove === 'place' ? (
+              <>
+                <svg className="w-5 h-5 animate-spin opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                <span>Playing…</span>
+              </>
             ) : (
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 1l4 4-4 4"/>
-                <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                <path d="M7 23l-4-4 4-4"/>
-                <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-              </svg>
+              <>
+                <svg className="w-6 h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+                <span>Play</span>
+              </>
             )}
-            <span className="text-[10px] font-semibold leading-none">
-              {pendingMove === 'recycle' ? 'Sending…' : hasExchangeTiles ? 'Submit' : 'Exchange'}
-            </span>
           </button>
 
-          {/* Pass */}
-          <button
-            type="button"
-            onClick={handlePass}
-            disabled={!canAct}
-            className="flex flex-col items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="5 4 15 12 5 20 5 4"/>
-              <line x1="19" y1="5" x2="19" y2="19"/>
-            </svg>
-            <span className="text-[10px] font-semibold leading-none">
-              {pendingMove === 'pass' ? 'Passing…' : 'Pass'}
-            </span>
-          </button>
         </div>
-
-        {/* Play — primary, takes remaining width */}
-        <button
-          type="button"
-          onClick={handlePlay}
-          disabled={isBusy || !isMyTurn || !isValidPlay || !isGameActive}
-          className="flex-1 flex items-center justify-center gap-2.5 rounded-xl bg-green-600 px-4 text-base font-bold text-white shadow-sm transition hover:bg-green-700 active:bg-green-800 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <svg className="w-6 h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 6L9 17l-5-5"/>
-          </svg>
-          <span>{pendingMove === 'place' ? 'Playing…' : 'Play'}</span>
-        </button>
-
       </div>
-    </div>
+    </>
   );
 }

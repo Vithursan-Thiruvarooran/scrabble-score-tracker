@@ -1,3 +1,7 @@
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 self.addEventListener('push', event => {
   const data = event.data?.json() ?? {};
   event.waitUntil(
@@ -10,7 +14,7 @@ self.addEventListener('push', event => {
       return self.registration.showNotification(data.title ?? 'Scrabble', {
         body: data.body,
         icon: '/scrabble/icons/icon-192.png',
-        badge: '/scrabble/icons/icon-192.png',
+        badge: '/scrabble/icons/badge.svg',
         data: { url: data.url ?? '/' },
       });
     })
