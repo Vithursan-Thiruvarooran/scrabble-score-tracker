@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { TILE_VALUES } from '../../utils/tiles';
+import { calculatePendingScore, getLastPendingKey } from '../../utils/scoring';
 
 type SquareType = 'TW' | 'DW' | 'TL' | 'DL' | 'center' | 'normal';
 
@@ -91,6 +92,14 @@ function DraggableTile({ row, col, letter, isBlank }: { row: number; col: number
   );
 }
 
+function cornerClass(row: number, col: number): string {
+  if (row === 0 && col === 0) return 'rounded-tl';
+  if (row === 0 && col === 14) return 'rounded-tr';
+  if (row === 14 && col === 0) return 'rounded-bl';
+  if (row === 14 && col === 14) return 'rounded-br';
+  return '';
+}
+
 interface BoardCellProps {
   row: number;
   col: number;
@@ -100,9 +109,10 @@ interface BoardCellProps {
   isValidPlay: boolean;
   squareType: SquareType;
   highlightType?: 'valid' | 'invalid' | 'challenged';
+  pendingScore?: number;
 }
 
-function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareType, highlightType }: BoardCellProps) {
+function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareType, highlightType, pendingScore }: BoardCellProps) {
   const occupied = letter !== null;
   const { setNodeRef, isOver } = useDroppable({
     id: `${row}-${col}`,
@@ -131,7 +141,7 @@ function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareTy
   return (
     <div
       ref={setNodeRef}
-      className={`relative aspect-square flex items-center justify-center transition-[filter] ${bgClass}`}
+      className={`relative aspect-square flex items-center justify-center transition-[filter] ${bgClass} ${cornerClass(row, col)}`}
     >
       {occupied ? (
         isPending ? (
@@ -152,6 +162,11 @@ function BoardCell({ row, col, letter, isPending, isBlank, isValidPlay, squareTy
             {SQUARE_LABELS[squareType]}
           </span>
         )
+      )}
+      {pendingScore !== undefined && (
+        <div className="absolute -bottom-2 -right-2 z-20 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-green-600 px-1 text-[9px] font-bold text-white shadow-md leading-none pointer-events-none">
+          +{pendingScore}
+        </div>
       )}
     </div>
   );
@@ -175,13 +190,20 @@ export function GameBoard({ board, pendingPlacements, isValidPlay = false, highl
     );
   }, [board, pendingPlacements]);
 
+  const pendingScore = useMemo(() => {
+    if (!isValidPlay || !pendingPlacements || Object.keys(pendingPlacements).length === 0) return null;
+    return calculatePendingScore(board ?? EMPTY_BOARD, pendingPlacements);
+  }, [isValidPlay, board, pendingPlacements]);
+
+  const lastPendingKey = useMemo(() => {
+    if (pendingScore === null || !pendingPlacements) return null;
+    return getLastPendingKey(pendingPlacements);
+  }, [pendingScore, pendingPlacements]);
+
   return (
     <div className="space-y-3">
-      {/* <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 px-6">
-        Board
-      </h2> */}
       <div
-        className="grid gap-px bg-gray-400 dark:bg-gray-600 rounded overflow-hidden w-full"
+        className="grid gap-px bg-gray-400 dark:bg-gray-600 rounded w-full"
         style={{ gridTemplateColumns: 'repeat(15, minmax(0, 1fr))' }}
       >
         {mergedBoard.map((row, r) =>
@@ -196,11 +218,11 @@ export function GameBoard({ board, pendingPlacements, isValidPlay = false, highl
               isValidPlay={isValidPlay}
               squareType={getSquareType(r, c)}
               highlightType={highlightedCells?.get(`${r}-${c}`)}
+              pendingScore={lastPendingKey === `${r}-${c}` && pendingScore !== null ? pendingScore : undefined}
             />
           ))
         )}
       </div>
-
     </div>
   );
 }
