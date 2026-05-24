@@ -70,7 +70,7 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
 
   return (
     <div className="h-screen bg-amber-50 dark:bg-gray-950 px-4 flex flex-col">
-      <header className="py-6 flex items-center justify-between max-w-sm w-full mx-auto shrink-0">
+      <header className={`py-6 flex items-center justify-between max-w-sm w-full mx-auto shrink-0 border-b transition-colors ${socketConnected ? 'border-transparent' : 'border-red-300 dark:border-red-700'}`}>
         <div className="flex items-center gap-2">
           <div className="flex gap-0.5">
             {['S', 'C', 'R'].map((l, i) => (
@@ -97,10 +97,6 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
               <rect y="12.5" width="16" height="1.5" rx="0.75" />
             </svg>
           </button>
-          <div
-            className={`absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-amber-50 dark:border-gray-950 pointer-events-none ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
-            title={socketConnected ? 'Connected' : 'Disconnected'}
-          />
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />

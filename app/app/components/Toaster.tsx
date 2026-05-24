@@ -32,12 +32,14 @@ export function Toaster() {
                     >
                       {toast.action.label}
                     </button>
-                  : <Link
-                      to={toast.action.to!}
+                  : toast.action.to
+                  ? <Link
+                      to={toast.action.to}
                       className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-2 py-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                     >
                       {toast.action.label}
                     </Link>
+                  : null
               )}
               <button
                 type="button"

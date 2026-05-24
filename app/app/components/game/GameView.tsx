@@ -338,7 +338,7 @@ export function GameView() {
       <div className="h-dvh flex flex-col overflow-hidden bg-white dark:bg-gray-950">
 
         {/* Header: top row (back + menu), second row (scores) */}
-        <header className="shrink-0 flex flex-col border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-950">
+        <header className={`shrink-0 flex flex-col border-b bg-white dark:bg-gray-950 transition-colors ${isGameActive && !socketConnected ? 'border-red-300 dark:border-red-700' : 'border-gray-100 dark:border-gray-800'}`}>
           {/* Top row: back + label + hamburger */}
           <div className="flex items-center justify-between px-3 pt-2 pb-1">
             <Link
@@ -367,12 +367,6 @@ export function GameView() {
                       <rect y="12.5" width="16" height="1.5" rx="0.75" />
                     </svg>
                   </button>
-                  {isGameActive && (
-                    <div
-                      className={`absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-white dark:border-gray-950 pointer-events-none ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
-                      title={socketConnected ? 'Connected' : 'Disconnected'}
-                    />
-                  )}
                   {updateAvailable && (
                     <div
                       className="absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-white dark:border-gray-950 bg-blue-500 pointer-events-none"
