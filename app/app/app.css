@@ -27,6 +27,10 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
 html,
 body {
   @apply bg-white dark:bg-gray-950;

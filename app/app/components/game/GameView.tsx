@@ -335,7 +335,7 @@ export function GameView() {
         />
       )}
 
-      <div className="h-dvh flex flex-col overflow-hidden bg-white dark:bg-gray-950">
+      <div className="h-dvh pt-safe flex flex-col overflow-hidden bg-white dark:bg-gray-950">
 
         {/* Header: top row (back + menu), second row (scores) */}
         <header className={`shrink-0 flex flex-col border-b bg-white dark:bg-gray-950 transition-colors ${isGameActive && !socketConnected ? 'border-red-300 dark:border-red-700' : 'border-gray-100 dark:border-gray-800'}`}>

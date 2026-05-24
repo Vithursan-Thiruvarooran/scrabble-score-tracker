@@ -69,7 +69,7 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
   }
 
   return (
-    <div className="h-screen bg-amber-50 dark:bg-gray-950 px-4 flex flex-col">
+    <div className="h-screen pt-safe bg-amber-50 dark:bg-gray-950 px-4 flex flex-col">
       <header className={`py-6 flex items-center justify-between max-w-sm w-full mx-auto shrink-0 border-b transition-colors ${socketConnected ? 'border-transparent' : 'border-red-300 dark:border-red-700'}`}>
         <div className="flex items-center gap-2">
           <div className="flex gap-0.5">
