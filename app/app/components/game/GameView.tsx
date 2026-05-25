@@ -335,7 +335,8 @@ export function GameView() {
         />
       )}
 
-      <div className="h-dvh pt-safe flex flex-col overflow-hidden bg-white dark:bg-gray-950">
+      <div className="h-dvh bg-white dark:bg-gray-950 lg:bg-slate-100 lg:dark:bg-gray-900 lg:flex lg:justify-center">
+        <div className="h-dvh pt-safe flex flex-col overflow-hidden bg-white dark:bg-gray-950 w-full lg:max-w-[440px] lg:border-x lg:border-gray-200 lg:dark:border-gray-800 lg:shadow-[0_0_40px_rgba(0,0,0,0.06)]">
 
         {/* Header: top row (back + menu), second row (scores) */}
         <header className={`shrink-0 flex flex-col border-b bg-white dark:bg-gray-950 transition-colors ${isGameActive && !socketConnected ? 'border-red-300 dark:border-red-700' : 'border-gray-100 dark:border-gray-800'}`}>
@@ -506,6 +507,7 @@ export function GameView() {
             onToggleRecycle={handleToggleRecycle}
           />
         )}
+        </div>
       </div>
 
       {blankModalState && (
