@@ -1,23 +1,31 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useNotifications } from './NotificationContext';
 
 interface ServiceWorkerUpdateContextValue {
   updateAvailable: boolean;
   applyUpdate: () => void;
+  checkForUpdate: () => Promise<void>;
 }
 
 const ServiceWorkerUpdateContext = createContext<ServiceWorkerUpdateContextValue>({
   updateAvailable: false,
   applyUpdate: () => {},
+  checkForUpdate: async () => {},
 });
 
 export function ServiceWorkerUpdateProvider({ children }: { children: React.ReactNode }) {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const { notify } = useNotifications();
+  const regRef = useRef<ServiceWorkerRegistration | null>(null);
 
   const applyUpdate = useCallback(() => {
     waitingWorker?.postMessage({ type: 'SKIP_WAITING' });
   }, [waitingWorker]);
+
+  const checkForUpdate = useCallback(async () => {
+    if (!regRef.current) return;
+    await regRef.current.update();
+  }, []);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
@@ -32,6 +40,7 @@ export function ServiceWorkerUpdateProvider({ children }: { children: React.Reac
     navigator.serviceWorker
       .register(`${import.meta.env.BASE_URL}sw.js`)
       .then((reg) => {
+        regRef.current = reg;
         reg.addEventListener('updatefound', () => {
           const next = reg.installing;
           if (!next) return;
@@ -55,7 +64,7 @@ export function ServiceWorkerUpdateProvider({ children }: { children: React.Reac
   }, [notify]);
 
   return (
-    <ServiceWorkerUpdateContext.Provider value={{ updateAvailable: waitingWorker !== null, applyUpdate }}>
+    <ServiceWorkerUpdateContext.Provider value={{ updateAvailable: waitingWorker !== null, applyUpdate, checkForUpdate }}>
       {children}
     </ServiceWorkerUpdateContext.Provider>
   );

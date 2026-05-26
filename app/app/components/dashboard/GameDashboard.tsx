@@ -11,6 +11,7 @@ import { CurrentGames } from './CurrentGames';
 import { NotificationBanner } from './NotificationBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useSwUpdate } from '../../context/ServiceWorkerUpdateContext';
 import { socket } from '../../socket';
 import { useSocketStatus } from '../../hooks/useSocketStatus';
 
@@ -27,7 +28,16 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
   const [createError, setCreateError] = useState<string | null>(null);
   const [friends, setFriends] = useState<GameUser[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const socketConnected = useSocketStatus();
+  const { updateAvailable, applyUpdate, checkForUpdate } = useSwUpdate();
+
+  async function handleCheckForUpdate() {
+    setMenuOpen(false);
+    setCheckingUpdate(true);
+    await checkForUpdate();
+    setTimeout(() => setCheckingUpdate(false), 3000);
+  }
 
   useEffect(() => {
     function onChallenge({ game_id, challenger_name }: { game_id: string; challenger_name: string }) {
@@ -97,10 +107,34 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
               <rect y="12.5" width="16" height="1.5" rx="0.75" />
             </svg>
           </button>
+          {updateAvailable && (
+            <div
+              className="absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-amber-50 dark:border-gray-950 bg-blue-500 pointer-events-none"
+              title="Update available"
+            />
+          )}
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+              <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                {updateAvailable ? (
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); applyUpdate(); }}
+                    className="w-full px-4 py-3 text-left text-sm text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                  >
+                    Update available — Reload
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCheckForUpdate}
+                    disabled={checkingUpdate}
+                    className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    {checkingUpdate ? 'Checking for update…' : 'Check for update'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); onLogout(); }}

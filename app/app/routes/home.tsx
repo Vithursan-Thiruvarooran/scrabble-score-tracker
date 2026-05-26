@@ -2,6 +2,7 @@ import type { Route } from './+types/home';
 import { useAuth } from '../context/AuthContext';
 import { AuthPage } from '../components/auth/AuthPage';
 import { GameDashboard } from '../components/dashboard/GameDashboard';
+import { InstallPromptBanner } from '../components/InstallPromptBanner';
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -14,6 +15,11 @@ export default function Home() {
   const { token, ready, login, logout } = useAuth();
 
   if (!ready) return null;
-  if (!token) return <AuthPage onAuth={login} />;
-  return <GameDashboard onLogout={logout} />;
+
+  return (
+    <>
+      {!token ? <AuthPage onAuth={login} /> : <GameDashboard onLogout={logout} />}
+      <InstallPromptBanner />
+    </>
+  );
 }
