@@ -4,16 +4,17 @@ import * as gameService from '../../services/game';
 import * as userService from '../../services/user';
 import type { CreateGameParams } from '../../services/game';
 import type { GameUser } from '../../services/user';
-import { AddFriendCard } from './AddFriendCard';
-import { NewGameCard } from './NewGameCard';
 import { NewGameForm } from './NewGameForm';
-import { CurrentGames } from './CurrentGames';
-import { NotificationBanner } from './NotificationBanner';
+import { PlaySection } from './PlaySection';
+import { FriendsSection } from './FriendsSection';
+import { MeSection } from './MeSection';
+import { NavBar } from './NavBar';
+import type { Tab } from './NavBar';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { useSwUpdate } from '../../context/ServiceWorkerUpdateContext';
 import { socket } from '../../socket';
 import { useSocketStatus } from '../../hooks/useSocketStatus';
+import { HamburgerMenu } from '../shared/HamburgerMenu';
 
 interface GameDashboardProps {
   onLogout: () => void;
@@ -27,17 +28,8 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
   const [busy, setBusy] = useState<'create' | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [friends, setFriends] = useState<GameUser[]>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('play');
   const socketConnected = useSocketStatus();
-  const { updateAvailable, applyUpdate, checkForUpdate } = useSwUpdate();
-
-  async function handleCheckForUpdate() {
-    setMenuOpen(false);
-    setCheckingUpdate(true);
-    await checkForUpdate();
-    setTimeout(() => setCheckingUpdate(false), 3000);
-  }
 
   useEffect(() => {
     function onChallenge({ game_id, challenger_name }: { game_id: string; challenger_name: string }) {
@@ -79,11 +71,11 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
   }
 
   return (
-    <div className="h-screen pt-safe bg-amber-50 dark:bg-gray-950 px-4 flex flex-col">
+    <div className="fixed inset-0 pt-safe bg-amber-50 dark:bg-gray-950 px-4 flex flex-col">
       <header className={`py-6 flex items-center justify-between max-w-sm w-full mx-auto shrink-0 border-b transition-colors ${socketConnected ? 'border-transparent' : 'border-red-300 dark:border-red-700'}`}>
         <div className="flex items-center gap-2">
           <div className="flex gap-0.5">
-            {['S', 'C', 'R'].map((l, i) => (
+            {['S', 'C', 'R', 'A', 'B', 'B', 'L', 'E'].map((l, i) => (
               <span
                 key={i}
                 className="w-6 h-6 flex items-center justify-center bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 font-bold rounded text-xs shadow-sm"
@@ -92,73 +84,23 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
               </span>
             ))}
           </div>
-          <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Score Tracker</span>
         </div>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((prev) => !prev)}
-            className="flex items-center justify-center w-10 h-10 -mr-1 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
-            aria-label="Menu"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <rect y="2" width="16" height="1.5" rx="0.75" />
-              <rect y="7.25" width="16" height="1.5" rx="0.75" />
-              <rect y="12.5" width="16" height="1.5" rx="0.75" />
-            </svg>
-          </button>
-          {updateAvailable && (
-            <div
-              className="absolute top-1 right-1 w-2 h-2 rounded-full border-2 border-amber-50 dark:border-gray-950 bg-blue-500 pointer-events-none"
-              title="Update available"
-            />
-          )}
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
-                {updateAvailable ? (
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); applyUpdate(); }}
-                    className="w-full px-4 py-3 text-left text-sm text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
-                  >
-                    Update available — Reload
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleCheckForUpdate}
-                    disabled={checkingUpdate}
-                    className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    {checkingUpdate ? 'Checking for update…' : 'Check for update'}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); onLogout(); }}
-                  className="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                >
-                  Log out
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <HamburgerMenu dotBorderColor="amber-50" onLogout={onLogout} />
       </header>
 
-      <main className="flex-1 flex flex-col items-center overflow-hidden pb-4">
-        <div className="w-full max-w-sm flex flex-col flex-1 min-h-0 gap-4">
-          <NotificationBanner />
-          <AddFriendCard />
-          <NewGameCard disabled={busy !== null} onOpen={handleOpenForm} />
-          <div className="flex flex-col flex-1 min-h-0 gap-6">
-            <CurrentGames completed={false} />
-            <CurrentGames completed={true} />
-          </div>
-        </div>
+      <main className="flex-1 flex flex-col overflow-hidden py-4">
+        {activeTab === 'play' && (
+          <PlaySection onOpenForm={handleOpenForm} busy={busy !== null} />
+        )}
+        {activeTab === 'friends' && (
+          <FriendsSection />
+        )}
+        {activeTab === 'me' && (
+          <MeSection onLogout={onLogout} />
+        )}
       </main>
+
+      <NavBar active={activeTab} onChange={setActiveTab} />
 
       {showForm && (
         <NewGameForm

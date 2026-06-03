@@ -96,3 +96,4 @@ class GameOut(BaseModel):
     date: Optional[datetime] = None
     game_state: Optional[GameStateSummary] = None
     invitation_status: Optional[str] = "pending"
+    nudges: Dict[str, str] = {}

@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 import type { Game } from '../../services/game';
+import { NudgeButton } from './NudgeButton';
 
 interface CurrentGameCardProps {
   game: Game;
@@ -86,6 +87,15 @@ export function CurrentGameCard({ game, currentUserId }: CurrentGameCardProps) {
       }`}>
         {them.firstname}
       </span>
+
+      {/* Nudge button — only when opponent is on the clock */}
+      {isActive && !isMyTurn && (
+        <NudgeButton
+          gameId={game.id}
+          lastMoveAt={gs?.last_move_at ?? null}
+          lastNudgedAt={game.nudges?.[them.id] ?? null}
+        />
+      )}
 
       {/* Time since last move */}
       <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 w-6 text-right tabular-nums">

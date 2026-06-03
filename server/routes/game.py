@@ -67,6 +67,7 @@ def _build_game_out(game: dict, user_cache: Dict[str, dict]) -> GameOut:
         date=game.get("date"),
         game_state=game_state_summary,
         invitation_status=game.get("invitation_status", "pending"),
+        nudges=game.get("nudges", {}),
     )
 
 

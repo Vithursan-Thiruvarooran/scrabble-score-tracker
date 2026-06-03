@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -24,3 +25,9 @@ class UserLogin(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class UserUpdate(BaseModel):
+    firstname: Optional[str] = Field(None, min_length=1, max_length=100)
+    lastname: Optional[str] = Field(None, min_length=1, max_length=100)
+    password: Optional[str] = Field(None, min_length=8, max_length=128)

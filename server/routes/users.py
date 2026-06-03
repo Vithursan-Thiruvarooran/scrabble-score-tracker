@@ -1,10 +1,12 @@
 from typing import List
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
 from db import get_db
-from models import AcceptFriendRequest, AddFriendRequest, FriendOut, UserOut
+from models import AcceptFriendRequest, AddFriendRequest, FriendOut, UserOut, UserUpdate
 from routes.auth import get_current_user
+from services.auth import hash_password
 from utils.helpers import user_doc_to_out, validate_object_id
 
 router = APIRouter(prefix="/users")
@@ -93,6 +95,35 @@ async def accept_friend(payload: AcceptFriendRequest, current_user=Depends(get_c
         })
 
     return FriendOut(id=str(request_doc["_id"]), userId=request_doc["userId"], friendId=user_id, status="accepted")
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(payload: UserUpdate, current_user=Depends(get_current_user)):
+    update_dict = {}
+    if payload.firstname is not None:
+        update_dict["firstname"] = payload.firstname
+    if payload.lastname is not None:
+        update_dict["lastname"] = payload.lastname
+    if payload.password is not None:
+        update_dict["password_hash"] = hash_password(payload.password)
+    if not update_dict:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    db = get_db()
+    oid = current_user["_id"]
+    await db.users.update_one({"_id": oid}, {"$set": update_dict})
+    updated = await db.users.find_one({"_id": oid})
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user_doc_to_out(updated)
+
+
+@router.delete("/me", status_code=200)
+async def delete_me(current_user=Depends(get_current_user)):
+    db = get_db()
+    oid = current_user["_id"]
+    await db.users.update_one({"_id": oid}, {"$set": {"is_deleted": True}})
+    return {"ok": True}
 
 
 @router.get("/{user_id}", response_model=UserOut)

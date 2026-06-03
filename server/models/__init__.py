@@ -1,7 +1,7 @@
 from models.friend import AddFriendRequest, AcceptFriendRequest, FriendCreate, FriendOut
 from models.game import ChallengeResponse, GameBase, GameMove, GameOut, GameState, GameStateSummary, TilePlacement
 from models.push import PushSubscriptionPayload
-from models.user import TokenOut, User, UserLogin, UserOut, UserRegister
+from models.user import TokenOut, User, UserLogin, UserOut, UserRegister, UserUpdate
 
 __all__ = [
     "AcceptFriendRequest",
@@ -21,4 +21,5 @@ __all__ = [
     "UserLogin",
     "UserOut",
     "UserRegister",
+    "UserUpdate",
 ]

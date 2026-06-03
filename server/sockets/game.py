@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from bson import ObjectId
@@ -20,7 +21,7 @@ from services.game_state import (
     get_game_state,
 )
 from services.room import active_game_rooms
-from services.push import send_turn_notification
+from services.push import send_turn_notification, send_nudge_notification
 from sockets import sio, socket_manager
 
 logger = logging.getLogger(__name__)
@@ -291,3 +292,78 @@ async def resolve_dispute(sid, data):
             next_player = state.get("turn")
             if next_player and next_player != user_id:
                 asyncio.create_task(send_turn_notification(next_player, game_id))
+
+
+@sio.event
+async def nudge_player(sid, data):
+    """Nudge a player to play a move."""
+    logger.info("nudge_player: sid=%s data=%s", sid, data)
+    user_id = await _require_auth(sid, "nudge_error")
+    if not user_id:
+        return
+
+    game_id = data.get("game_id") if isinstance(data, dict) else None
+    if not isinstance(game_id, str) or not game_id:
+        await sio.emit("nudge_error", {"message": "game_id is required."}, to=sid)
+        return
+
+    try:
+        db = get_db()
+        game_doc = await db.games.find_one({"_id": ObjectId(game_id)})
+    except Exception:
+        await sio.emit("nudge_error", {"message": "Invalid game id."}, to=sid)
+        return
+
+    if not game_doc:
+        await sio.emit("nudge_error", {"message": "Game not found."}, to=sid)
+        return
+    if user_id not in (game_doc.get("user"), game_doc.get("opponent")):
+        await sio.emit("nudge_error", {"message": "Not a participant."}, to=sid)
+        return
+
+    state = await get_game_state(game_id)
+    if not state or state.get("status") != "active":
+        await sio.emit("nudge_error", {"message": "Game is not active."}, to=sid)
+        return
+
+    target_id = state.get("turn")
+    if not target_id or target_id == user_id:
+        await sio.emit("nudge_error", {"message": "Cannot nudge yourself."}, to=sid)
+        return
+
+    real_moves = [m for m in state.get("game_moves", []) if m.get("move_type") != "initial"]
+    if not real_moves:
+        await sio.emit("nudge_error", {"message": "No moves yet."}, to=sid)
+        return
+
+    now = datetime.now(timezone.utc)
+    last_move_time = datetime.fromisoformat(real_moves[-1]["timestamp"])
+    if last_move_time.tzinfo is None:
+        last_move_time = last_move_time.replace(tzinfo=timezone.utc)
+    if (now - last_move_time).total_seconds() < 1800:
+        await sio.emit("nudge_error", {"message": "Opponent moved recently."}, to=sid)
+        return
+
+    nudges = game_doc.get("nudges", {})
+    last_nudge_iso = nudges.get(target_id)
+    if last_nudge_iso:
+        last_nudge_dt = datetime.fromisoformat(last_nudge_iso.replace("Z", "+00:00"))
+        if (now - last_nudge_dt).total_seconds() < 1800:
+            await sio.emit("nudge_error", {"message": "Player was nudged recently."}, to=sid)
+            return
+
+    # Append Z so clients (JavaScript) parse the timestamp as UTC, not local time.
+    nudge_time = now.isoformat().replace("+00:00", "Z")
+    try:
+        await db.games.update_one(
+            {"_id": ObjectId(game_id)},
+            {"$set": {f"nudges.{target_id}": nudge_time}},
+        )
+    except Exception:
+        logger.exception("nudge_player: DB write failed game=%s", game_id)
+        await sio.emit("nudge_error", {"message": "Could not send nudge."}, to=sid)
+        return
+
+    asyncio.create_task(send_nudge_notification(target_id, game_id))
+    logger.info("nudge_player: room=%s nudger=%s target=%s", game_id, user_id, target_id)
+    await sio.emit("nudge_ok", {"nudged_at": nudge_time}, to=sid)

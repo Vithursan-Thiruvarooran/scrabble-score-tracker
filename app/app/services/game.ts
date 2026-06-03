@@ -42,6 +42,7 @@ export interface Game {
   date: string;
   game_state: GameStateSummary | null;
   invitation_status: string | null;
+  nudges?: Record<string, string>;
 }
 
 export interface PendingDispute {

@@ -54,3 +54,24 @@ export function acceptFriend(id: string, token: string): Promise<void> {
     body: JSON.stringify({ id }),
   });
 }
+
+export interface UserUpdateData {
+  firstname?: string;
+  lastname?: string;
+  password?: string;
+}
+
+export function updateMe(token: string, data: UserUpdateData): Promise<GameUser> {
+  return apiFetch<GameUser>('/users/me', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteMe(token: string): Promise<void> {
+  return apiFetch('/users/me', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

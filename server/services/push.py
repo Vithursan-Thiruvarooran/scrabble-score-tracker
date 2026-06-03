@@ -76,3 +76,13 @@ async def send_challenge_notification(user_id: str, game_id: str, challenger_nam
         "url": f"{_BASE_PATH}/game/{game_id}",
         "game_id": game_id,
     })
+
+
+async def send_nudge_notification(user_id: str, game_id: str) -> None:
+    """Notify user_id that their opponent is waiting for them to move."""
+    await _send_push_to_user(user_id, {
+        "title": "Your move!",
+        "body": "Your opponent is waiting. Don't keep them hanging!",
+        "url": f"{_BASE_PATH}/game/{game_id}",
+        "game_id": game_id,
+    })

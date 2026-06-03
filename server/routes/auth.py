@@ -26,7 +26,7 @@ async def get_current_user(authorization: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
     db = get_db()
-    user = await db.users.find_one({"_id": oid})
+    user = await db.users.find_one({"_id": oid, "is_deleted": {"$ne": True}})
     if not user:
         raise HTTPException(status_code=401, detail="User no longer exists")
 
@@ -66,7 +66,7 @@ async def login(request: Request, payload: UserLogin):
     db = get_db()
     user = await db.users.find_one({"email": payload.email})
 
-    if not user:
+    if not user or user.get("is_deleted"):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not verify_password(payload.password, user.get("password_hash", "")):
