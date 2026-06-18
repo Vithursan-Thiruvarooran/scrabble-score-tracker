@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import random
-from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from bson import ObjectId
 
 from db import get_db
-from services.redis_cache import cache_state, get_cached_state
+from services.redis_cache import cache_state, get_cached_state, get_redis
 from services.scoring import calculate_move_score, extract_words
 from services.rules import validate_placement, validate_rack_tiles
 from services.dictionary import validate_words
 from services.dispute_timers import schedule_dispute_timeout, cancel_dispute_timeout
+from utils.helpers import utc_now_iso
 
 TILE_DISTRIBUTION: List[str] = (
     ["A"] * 9 + ["B"] * 2 + ["C"] * 2 + ["D"] * 4 + ["E"] * 12
@@ -31,6 +34,23 @@ def _fresh_bag() -> List[str]:
 
 def _empty_board() -> List[List[Optional[str]]]:
     return [[None] * 15 for _ in range(15)]
+
+
+@asynccontextmanager
+async def _game_lock(game_id: str):
+    """Per-game distributed lock via Redis to serialize concurrent move mutations."""
+    key = f"lock:game:{game_id}"
+    r = get_redis()
+    for _ in range(100):  # retry up to 5 s
+        if await r.set(key, "1", nx=True, ex=30):
+            break
+        await asyncio.sleep(0.05)
+    else:
+        raise RuntimeError(f"Could not acquire lock for game {game_id}")
+    try:
+        yield
+    finally:
+        await r.delete(key)
 
 
 def build_initial_state(creator_id: str, disputes: bool = False, dispute_timeout: int = 60, dictionary: str = "TWL06") -> dict:
@@ -57,7 +77,7 @@ def build_initial_state(creator_id: str, disputes: bool = False, dispute_timeout
             "all_words": [],
             "rack": [],
             "tile_bag": initial_bag,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_iso(),
         }],
         "consecutive_passes": 0,
         "disputes": disputes,
@@ -79,6 +99,11 @@ async def get_game_state(game_id: str) -> Optional[dict]:
 
     state = game.get("game_state")
     if state:
+        if "game_moves" not in state:
+            moves = await db.moves.find(
+                {"game_id": game_id}, {"_id": 0, "game_id": 0, "user_id": 0}
+            ).sort("move_number", 1).to_list(length=None)
+            state["game_moves"] = moves or []
         await cache_state(game_id, state)
     return state
 
@@ -94,9 +119,18 @@ async def add_player_to_state(game_id: str, player_id: str) -> Optional[dict]:
     if not state:
         return None
 
+    # Hydrate game_moves from db.moves if not embedded (new documents strip them).
+    # Must happen before any logic that reads game_moves and before cache_state.
+    if "game_moves" not in state:
+        moves = await db.moves.find(
+            {"game_id": game_id}, {"_id": 0, "game_id": 0, "user_id": 0}
+        ).sort("move_number", 1).to_list(length=None)
+        state["game_moves"] = moves or []
+
     players: List[str] = state["players"]
 
     if player_id in players:
+        await cache_state(game_id, state)
         return state
 
     if len(players) >= 2:
@@ -111,13 +145,16 @@ async def add_player_to_state(game_id: str, player_id: str) -> Optional[dict]:
     state["racks"][player_id] = rack
     state["scores"][player_id] = 0
     state["status"] = "active"
-    non_initial = [m for m in state.get("game_moves", []) if m.get("move_type") != "initial"]
+    non_initial = [m for m in state["game_moves"] if m.get("move_type") != "initial"]
     if non_initial:
         state["turn"] = player_id
 
+    state_for_db = {k: v for k, v in state.items() if k != "game_moves"}
+    if non_initial:
+        state_for_db["last_move_at"] = non_initial[-1].get("timestamp")
     await db.games.update_one(
         {"_id": ObjectId(game_id)},
-        {"$set": {"game_state": state}},
+        {"$set": {"game_state": state_for_db}},
     )
     await cache_state(game_id, state)
     return state
@@ -128,10 +165,16 @@ async def add_player_to_state(game_id: str, player_id: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 async def _persist(game_id: str, state: dict, dispute_move_number: Optional[int] = None) -> None:
-    """Fast-write to Redis, then durably persist to MongoDB."""
-    await cache_state(game_id, state)
+    """Persist to MongoDB first (system of record), then update Redis cache."""
     db = get_db()
-    fields: dict = {"game_state": state}
+
+    # Strip game_moves before saving to MongoDB; they live in db.moves
+    state_for_db = {k: v for k, v in state.items() if k != "game_moves"}
+    real_moves = [m for m in state.get("game_moves", []) if m.get("move_type") != "initial"]
+    if real_moves:
+        state_for_db["last_move_at"] = real_moves[-1].get("timestamp")
+
+    fields: dict = {"game_state": state_for_db}
     if state.get("status") == "finished":
         game = await db.games.find_one({"_id": ObjectId(game_id)}, {"user": 1, "opponent": 1})
         if game:
@@ -176,6 +219,9 @@ async def _persist(game_id: str, state: dict, dispute_move_number: Optional[int]
                 {"$set": move_doc},
                 upsert=True,
             )
+
+    # Update Redis cache after MongoDB write succeeds
+    await cache_state(game_id, state)
 
 
 def _advance_turn(state: dict, player_id: str) -> None:
@@ -230,156 +276,158 @@ async def apply_place(
     player_id: str,
     tiles: List[dict],
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await get_game_state(game_id)
-    if not state:
-        return None, "Game not found."
-    status = state.get("status")
-    _players: List[str] = state.get("players", [])
-    if status == "finished":
-        return state, "Game is already finished."
-    if status == "waiting":
-        if len(_players) != 1 or _players[0] != player_id:
+    async with _game_lock(game_id):
+        state = await get_game_state(game_id)
+        if not state:
+            return None, "Game not found."
+        status = state.get("status")
+        _players: List[str] = state.get("players", [])
+        if status == "finished":
+            return state, "Game is already finished."
+        if status == "waiting":
+            if len(_players) != 1 or _players[0] != player_id:
+                return state, "Game is not active."
+            already_played = any(m.get("move_type") != "initial" for m in state.get("game_moves", []))
+            if already_played:
+                return state, "Waiting for opponent to join before your next turn."
+        elif status != "active":
             return state, "Game is not active."
-        already_played = any(m.get("move_type") != "initial" for m in state.get("game_moves", []))
-        if already_played:
-            return state, "Waiting for opponent to join before your next turn."
-    elif status != "active":
-        return state, "Game is not active."
-    if state.get("turn") != player_id:
-        return state, "It is not your turn."
-    if state.get("pending_dispute"):
-        return state, "A dispute is pending resolution."
+        if state.get("turn") != player_id:
+            return state, "It is not your turn."
+        if state.get("pending_dispute"):
+            return state, "A dispute is pending resolution."
 
-    rack: List[str] = list(state["racks"].get(player_id, []))
-    rack_before: List[str] = list(rack)
-    board: List[List[Optional[str]]] = state["board"]
+        rack: List[str] = list(state["racks"].get(player_id, []))
+        rack_before: List[str] = list(rack)
+        board: List[List[Optional[str]]] = state["board"]
 
-    available = list(rack)
-    for t in tiles:
-        letter: str = t["letter"].upper()
-        is_blank: bool = bool(t.get("is_blank", False))
-        if is_blank:
-            if "?" not in available:
-                return state, f"You don't have a blank tile to play as '{letter}'."
-            available.remove("?")
-        else:
-            if letter in available:
-                available.remove(letter)
-            elif "?" in available:
+        available = list(rack)
+        for t in tiles:
+            letter: str = t["letter"].upper()
+            is_blank: bool = bool(t.get("is_blank", False))
+            if is_blank:
+                if "?" not in available:
+                    return state, f"You don't have a blank tile to play as '{letter}'."
                 available.remove("?")
             else:
-                return state, f"Tile '{letter}' is not in your rack."
+                if letter in available:
+                    available.remove(letter)
+                elif "?" in available:
+                    available.remove("?")
+                else:
+                    return state, f"Tile '{letter}' is not in your rack."
 
-    err = validate_placement(board, tiles)
-    if err:
-        return state, err
+        err = validate_placement(board, tiles)
+        if err:
+            return state, err
 
-    # Blank tiles stored as lowercase so scoring gives them 0 value.
-    for t in tiles:
-        letter = t["letter"].upper()
-        is_blank = bool(t.get("is_blank", False))
-        board[t["row"]][t["col"]] = letter.lower() if is_blank else letter
-        if is_blank:
-            rack.remove("?")
-        elif letter in rack:
-            rack.remove(letter)
-        elif "?" in rack:
-            rack.remove("?")
+        # Blank tiles stored as lowercase so scoring gives them 0 value.
+        for t in tiles:
+            letter = t["letter"].upper()
+            is_blank = bool(t.get("is_blank", False))
+            board[t["row"]][t["col"]] = letter.lower() if is_blank else letter
+            if is_blank:
+                rack.remove("?")
+            elif letter in rack:
+                rack.remove(letter)
+            elif "?" in rack:
+                rack.remove("?")
 
-    score = calculate_move_score(board, tiles)
-    word, all_words = extract_words(board, tiles)
+        score = calculate_move_score(board, tiles)
+        word, all_words = extract_words(board, tiles)
 
-    state["board"] = board
-    state["racks"][player_id] = rack
-    state["consecutive_passes"] = 0
-
-    if state.get("disputes"):
-        players: List[str] = state["players"]
-        opponent = next((p for p in players if p != player_id), None)
-        timeout: int = state.get("dispute_timeout", 60)
-        now_dt = datetime.utcnow()
-        state["pending_dispute"] = {
-            "player": player_id,
-            "opponent": opponent,
-            "tiles": tiles,
-            "score": score,
-            "word": word,
-            "all_words": all_words,
-            "rack_before": rack_before,
-            "move_number": len(state["game_moves"]),
-            "timestamp": now_dt.isoformat(),
-            "expires_at": (now_dt + timedelta(seconds=timeout)).isoformat(),
-        }
-        state["turn"] = opponent
-        await _persist(game_id, state)
-        from sockets import sio as _sio
-        schedule_dispute_timeout(game_id, timeout, apply_resolve_dispute, _sio.emit)
-        return state, None
-    else:
-        bag: List[str] = state["tile_bag"]
-        draw = min(7 - len(rack), len(bag))
-        rack.extend(bag[:draw])
-        bag = bag[draw:]
-
-        state["scores"][player_id] = state["scores"].get(player_id, 0) + score
+        state["board"] = board
         state["racks"][player_id] = rack
-        state["tile_bag"] = bag
-        state["game_moves"].append({
-            "move_number": len(state["game_moves"]),
-            "move_type": "place",
-            "player": player_id,
-            "tiles": tiles,
-            "recycled": [],
-            "score": score,
-            "word": word,
-            "all_words": all_words,
-            "rack": rack_before,
-            "tile_bag": list(bag),
-            "timestamp": datetime.utcnow().isoformat(),
-        })
+        state["consecutive_passes"] = 0
 
-        if not _check_game_over_after_place(state, player_id):
-            _advance_turn(state, player_id)
+        if state.get("disputes"):
+            players: List[str] = state["players"]
+            opponent = next((p for p in players if p != player_id), None)
+            timeout: int = state.get("dispute_timeout", 60)
+            now_dt = datetime.now(timezone.utc)
+            state["pending_dispute"] = {
+                "player": player_id,
+                "opponent": opponent,
+                "tiles": tiles,
+                "score": score,
+                "word": word,
+                "all_words": all_words,
+                "rack_before": rack_before,
+                "move_number": len(state["game_moves"]),
+                "timestamp": now_dt.isoformat().replace("+00:00", "Z"),
+                "expires_at": (now_dt + timedelta(seconds=timeout)).isoformat().replace("+00:00", "Z"),
+            }
+            state["turn"] = opponent
+            await _persist(game_id, state)
+            from sockets import sio as _sio
+            schedule_dispute_timeout(game_id, timeout, apply_resolve_dispute, _sio.emit)
+            return state, None
+        else:
+            bag: List[str] = state["tile_bag"]
+            draw = min(7 - len(rack), len(bag))
+            rack.extend(bag[:draw])
+            bag = bag[draw:]
 
-        await _persist(game_id, state)
-        return state, None
+            state["scores"][player_id] = state["scores"].get(player_id, 0) + score
+            state["racks"][player_id] = rack
+            state["tile_bag"] = bag
+            state["game_moves"].append({
+                "move_number": len(state["game_moves"]),
+                "move_type": "place",
+                "player": player_id,
+                "tiles": tiles,
+                "recycled": [],
+                "score": score,
+                "word": word,
+                "all_words": all_words,
+                "rack": rack_before,
+                "tile_bag": list(bag),
+                "timestamp": utc_now_iso(),
+            })
+
+            if not _check_game_over_after_place(state, player_id):
+                _advance_turn(state, player_id)
+
+            await _persist(game_id, state)
+            return state, None
 
 
 async def apply_pass(
     game_id: str,
     player_id: str,
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await get_game_state(game_id)
-    if not state:
-        return None, "Game not found."
-    if state.get("status") != "active":
-        return state, "Game is not active."
-    if state.get("turn") != player_id:
-        return state, "It is not your turn."
+    async with _game_lock(game_id):
+        state = await get_game_state(game_id)
+        if not state:
+            return None, "Game not found."
+        if state.get("status") != "active":
+            return state, "Game is not active."
+        if state.get("turn") != player_id:
+            return state, "It is not your turn."
 
-    consecutive = state.get("consecutive_passes", 0) + 1
-    state["consecutive_passes"] = consecutive
-    state["game_moves"].append({
-        "move_number": len(state["game_moves"]),
-        "move_type": "pass",
-        "player": player_id,
-        "tiles": [],
-        "recycled": [],
-        "score": 0,
-        "word": "",
-        "all_words": [],
-        "rack": list(state["racks"].get(player_id, [])),
-        "tile_bag": list(state["tile_bag"]),
-        "timestamp": datetime.utcnow().isoformat(),
-    })
+        consecutive = state.get("consecutive_passes", 0) + 1
+        state["consecutive_passes"] = consecutive
+        state["game_moves"].append({
+            "move_number": len(state["game_moves"]),
+            "move_type": "pass",
+            "player": player_id,
+            "tiles": [],
+            "recycled": [],
+            "score": 0,
+            "word": "",
+            "all_words": [],
+            "rack": list(state["racks"].get(player_id, [])),
+            "tile_bag": list(state["tile_bag"]),
+            "timestamp": utc_now_iso(),
+        })
 
-    if consecutive >= len(state["players"]) * 3:
-        _finish_game(state)
-    else:
-        _advance_turn(state, player_id)
+        if consecutive >= len(state["players"]) * 3:
+            _finish_game(state)
+        else:
+            _advance_turn(state, player_id)
 
-    await _persist(game_id, state)
-    return state, None
+        await _persist(game_id, state)
+        return state, None
 
 
 async def apply_recycle(
@@ -387,92 +435,94 @@ async def apply_recycle(
     player_id: str,
     letters: List[str],
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await get_game_state(game_id)
-    if not state:
-        return None, "Game not found."
-    if state.get("status") != "active":
-        return state, "Game is not active."
-    if state.get("turn") != player_id:
-        return state, "It is not your turn."
+    async with _game_lock(game_id):
+        state = await get_game_state(game_id)
+        if not state:
+            return None, "Game not found."
+        if state.get("status") != "active":
+            return state, "Game is not active."
+        if state.get("turn") != player_id:
+            return state, "It is not your turn."
 
-    rack: List[str] = list(state["racks"].get(player_id, []))
-    rack_before: List[str] = list(rack)
-    bag: List[str] = list(state["tile_bag"])
+        rack: List[str] = list(state["racks"].get(player_id, []))
+        rack_before: List[str] = list(rack)
+        bag: List[str] = list(state["tile_bag"])
 
-    if len(bag) < len(letters):
-        return state, "Not enough tiles in the bag to recycle."
+        if len(bag) < len(letters):
+            return state, "Not enough tiles in the bag to recycle."
 
-    err = validate_rack_tiles(rack, letters)
-    if err:
-        return state, err
+        err = validate_rack_tiles(rack, letters)
+        if err:
+            return state, err
 
-    for letter in letters:
-        if letter in rack:
-            rack.remove(letter)
-        elif "?" in rack:
-            rack.remove("?")
+        for letter in letters:
+            if letter in rack:
+                rack.remove(letter)
+            elif "?" in rack:
+                rack.remove("?")
 
-    bag.extend(letters)
-    random.shuffle(bag)
-    draw = min(len(letters), len(bag))
-    rack.extend(bag[:draw])
-    bag = bag[draw:]
+        bag.extend(letters)
+        random.shuffle(bag)
+        draw = min(len(letters), len(bag))
+        rack.extend(bag[:draw])
+        bag = bag[draw:]
 
-    state["racks"][player_id] = rack
-    state["tile_bag"] = bag
-    state["consecutive_passes"] = 0
-    state["game_moves"].append({
-        "move_number": len(state["game_moves"]),
-        "move_type": "recycle",
-        "player": player_id,
-        "tiles": [],
-        "recycled": letters,
-        "score": 0,
-        "word": "",
-        "all_words": [],
-        "rack": rack_before,
-        "tile_bag": list(bag),
-        "timestamp": datetime.utcnow().isoformat(),
-    })
-    _advance_turn(state, player_id)
+        state["racks"][player_id] = rack
+        state["tile_bag"] = bag
+        state["consecutive_passes"] = 0
+        state["game_moves"].append({
+            "move_number": len(state["game_moves"]),
+            "move_type": "recycle",
+            "player": player_id,
+            "tiles": [],
+            "recycled": letters,
+            "score": 0,
+            "word": "",
+            "all_words": [],
+            "rack": rack_before,
+            "tile_bag": list(bag),
+            "timestamp": utc_now_iso(),
+        })
+        _advance_turn(state, player_id)
 
-    await _persist(game_id, state)
-    return state, None
+        await _persist(game_id, state)
+        return state, None
 
 
 async def apply_resign(
     game_id: str,
     player_id: str,
 ) -> Tuple[Optional[dict], Optional[str]]:
-    state = await get_game_state(game_id)
-    if not state:
-        return None, "Game not found."
-    if state.get("status") != "active":
-        return state, "Game is not active."
-    if player_id not in state.get("players", []):
-        return state, "You are not a player in this game."
+    async with _game_lock(game_id):
+        state = await get_game_state(game_id)
+        if not state:
+            return None, "Game not found."
+        if state.get("status") != "active":
+            return state, "Game is not active."
+        if player_id not in state.get("players", []):
+            return state, "You are not a player in this game."
 
-    players: List[str] = state["players"]
-    winner = next((p for p in players if p != player_id), None)
+        players: List[str] = state["players"]
+        winner = next((p for p in players if p != player_id), None)
 
-    state["status"] = "finished"
-    state["winner"] = winner
-    state["game_moves"].append({
-        "move_number": len(state["game_moves"]),
-        "move_type": "resign",
-        "player": player_id,
-        "tiles": [],
-        "recycled": [],
-        "score": 0,
-        "word": "",
-        "all_words": [],
-        "rack": list(state["racks"].get(player_id, [])),
-        "tile_bag": list(state["tile_bag"]),
-        "timestamp": datetime.utcnow().isoformat(),
-    })
+        state["status"] = "finished"
+        state["winner"] = winner
+        state["game_moves"].append({
+            "move_number": len(state["game_moves"]),
+            "move_type": "resign",
+            "player": player_id,
+            "tiles": [],
+            "recycled": [],
+            "score": 0,
+            "word": "",
+            "all_words": [],
+            "rack": list(state["racks"].get(player_id, [])),
+            "tile_bag": list(state["tile_bag"]),
+            "timestamp": utc_now_iso(),
+        })
 
-    await _persist(game_id, state)
-    return state, None
+        await _persist(game_id, state)
+        return state, None
 
 
 async def apply_resolve_dispute(
@@ -485,77 +535,78 @@ async def apply_resolve_dispute(
     resolver_id=None means the auto-accept timer fired.
     dispute=False → accept move. dispute=True → challenge.
     """
-    state = await get_game_state(game_id)
-    if not state:
-        return None, "Game not found."
+    async with _game_lock(game_id):
+        state = await get_game_state(game_id)
+        if not state:
+            return None, "Game not found."
 
-    pending = state.get("pending_dispute")
-    if not pending:
-        return state, "No pending dispute."
+        pending = state.get("pending_dispute")
+        if not pending:
+            return state, "No pending dispute."
 
-    if resolver_id is not None and resolver_id != pending.get("opponent"):
-        return state, "Only the opponent can resolve a dispute."
+        if resolver_id is not None and resolver_id != pending.get("opponent"):
+            return state, "Only the opponent can resolve a dispute."
 
-    player_id: str = pending["player"]
-    move_number: int = pending["move_number"]
-    now_str = datetime.utcnow().isoformat()
+        player_id: str = pending["player"]
+        move_number: int = pending["move_number"]
+        now_str = utc_now_iso()
 
-    state["pending_dispute"] = None
+        state["pending_dispute"] = None
 
-    if not dispute:
-        # ── No challenge: commit normally ──
-        dispute_status = "not_disputed"
-        _commit_pending_place(state, pending)
-        if not _check_game_over_after_place(state, player_id):
-            _advance_turn(state, player_id)
-
-    else:
-        # ── Challenge filed: validate words ──
-        words_valid = validate_words(pending.get("all_words", []), state.get("dictionary", "TWL06"))
-        if words_valid:
-            # Words OK → commit, disputer loses their turn
-            dispute_status = "valid"
+        if not dispute:
+            # ── No challenge: commit normally ──
+            dispute_status = "not_disputed"
             _commit_pending_place(state, pending)
-            state["turn"] = player_id  # placer goes again
+            if not _check_game_over_after_place(state, player_id):
+                _advance_turn(state, player_id)
+
         else:
-            # Words invalid → revert
-            dispute_status = "invalid"
-            _revert_pending_place(state, pending)
-            _advance_turn(state, player_id)  # turn to disputer
+            # ── Challenge filed: validate words ──
+            words_valid = validate_words(pending.get("all_words", []), state.get("dictionary", "TWL06"))
+            if words_valid:
+                # Words OK → commit, disputer loses their turn
+                dispute_status = "valid"
+                _commit_pending_place(state, pending)
+                state["turn"] = player_id  # placer goes again
+            else:
+                # Words invalid → revert
+                dispute_status = "invalid"
+                _revert_pending_place(state, pending)
+                _advance_turn(state, player_id)  # turn to disputer
 
-    # Append place move record
-    actual_score = pending["score"] if dispute_status != "invalid" else 0
-    state["game_moves"].append({
-        "move_number": move_number,
-        "move_type": "place",
-        "player": player_id,
-        "tiles": pending["tiles"],
-        "recycled": [],
-        "score": actual_score,
-        "word": pending.get("word", ""),
-        "all_words": pending.get("all_words", []),
-        "rack": pending.get("rack_before", []),
-        "tile_bag": list(state["tile_bag"]),
-        "dispute_status": dispute_status,
-        "timestamp": pending.get("timestamp", now_str),
-    })
-
-    # Append dispute move record (only when actually challenged)
-    if dispute and resolver_id is not None:
+        # Append place move record
+        actual_score = pending["score"] if dispute_status != "invalid" else 0
         state["game_moves"].append({
-            "move_number": len(state["game_moves"]),
-            "move_type": "dispute",
-            "player": resolver_id,
-            "tiles": [],
+            "move_number": move_number,
+            "move_type": "place",
+            "player": player_id,
+            "tiles": pending["tiles"],
             "recycled": [],
-            "score": 0,
-            "word": "",
+            "score": actual_score,
+            "word": pending.get("word", ""),
             "all_words": pending.get("all_words", []),
-            "rack": list(state["racks"].get(resolver_id, [])),
+            "rack": pending.get("rack_before", []),
             "tile_bag": list(state["tile_bag"]),
             "dispute_status": dispute_status,
-            "timestamp": now_str,
+            "timestamp": pending.get("timestamp", now_str),
         })
 
-    await _persist(game_id, state, dispute_move_number=move_number)
-    return state, None
+        # Append dispute move record (only when actually challenged)
+        if dispute and resolver_id is not None:
+            state["game_moves"].append({
+                "move_number": len(state["game_moves"]),
+                "move_type": "dispute",
+                "player": resolver_id,
+                "tiles": [],
+                "recycled": [],
+                "score": 0,
+                "word": "",
+                "all_words": pending.get("all_words", []),
+                "rack": list(state["racks"].get(resolver_id, [])),
+                "tile_bag": list(state["tile_bag"]),
+                "dispute_status": dispute_status,
+                "timestamp": now_str,
+            })
+
+        await _persist(game_id, state, dispute_move_number=move_number)
+        return state, None

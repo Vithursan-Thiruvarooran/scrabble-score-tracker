@@ -20,7 +20,12 @@ def schedule_dispute_timeout(
     async def _auto_accept() -> None:
         try:
             await asyncio.sleep(timeout)
-            state, error = await resolve_fn(game_id, resolver_id=None, dispute=False)
+            # Shield the resolve call so that task cancellation (from a concurrent
+            # human resolve_dispute) cannot interrupt _persist mid-write and leave
+            # MongoDB committed but the Redis cache stale.
+            state, error = await asyncio.shield(
+                resolve_fn(game_id, resolver_id=None, dispute=False)
+            )
             if state and not error:
                 await emit_fn("game_state", {"game_id": game_id, **state}, room=game_id)
                 logger.info("dispute auto-accepted for game %s", game_id)

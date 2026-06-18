@@ -49,3 +49,19 @@ async def get_cached_state(game_id: str) -> Optional[dict]:
 async def evict_state(game_id: str) -> None:
     r = get_redis()
     await r.delete(f"game:{game_id}:state")
+
+
+_IDEM_TTL = 300  # 5 minutes
+
+
+async def get_idempotency_result(game_id: str, client_move_id: str) -> Optional[dict]:
+    raw = await get_redis().get(f"idem:{game_id}:{client_move_id}")
+    return json.loads(raw) if raw else None
+
+
+async def set_idempotency_result(game_id: str, client_move_id: str, event: str, data: dict) -> None:
+    await get_redis().setex(
+        f"idem:{game_id}:{client_move_id}",
+        _IDEM_TTL,
+        json.dumps({"event": event, "data": data}),
+    )

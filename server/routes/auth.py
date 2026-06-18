@@ -33,16 +33,6 @@ async def get_current_user(authorization: str = Header(default="")):
     return user
 
 
-def _to_auth_out(user: dict) -> UserOut:
-    return UserOut(
-        id=str(user["_id"]),
-        email=user["email"],
-        firstname=user["firstname"],
-        lastname=user["lastname"],
-        admin=user["admin"],
-    )
-
-
 @router.post("/register", response_model=UserOut, status_code=201)
 @limiter.limit("5/minute")
 async def register(request: Request, payload: UserRegister):
@@ -57,7 +47,7 @@ async def register(request: Request, payload: UserRegister):
         raise HTTPException(status_code=409, detail="Email already exists")
 
     doc["_id"] = result.inserted_id
-    return _to_auth_out(doc)
+    return user_doc_to_out(doc)
 
 
 @router.post("/login", response_model=TokenOut)
@@ -78,4 +68,4 @@ async def login(request: Request, payload: UserLogin):
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user=Depends(get_current_user)):
-    return _to_auth_out(current_user)
+    return user_doc_to_out(current_user)

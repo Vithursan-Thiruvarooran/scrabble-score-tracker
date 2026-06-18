@@ -10,7 +10,7 @@ from bson import ObjectId
 from db import get_db
 from services.auth import decode_access_token
 from services.dispute_timers import cancel_dispute_timeout
-from services.redis_cache import evict_state
+from services.redis_cache import evict_state, get_idempotency_result, set_idempotency_result
 from services.game_state import (
     add_player_to_state,
     apply_place,
@@ -20,16 +20,17 @@ from services.game_state import (
     apply_resolve_dispute,
     get_game_state,
 )
-from services.room import active_game_rooms
+from services.room import is_active_room, add_active_room, remove_active_room
 from services.push import send_turn_notification, send_nudge_notification
 from sockets import sio, socket_manager
+from utils.helpers import is_participant, spawn, utc_now_iso
 
 logger = logging.getLogger(__name__)
 
 
 async def _close_finished_game(game_id: str) -> None:
     cancel_dispute_timeout(game_id)
-    active_game_rooms.discard(game_id)
+    await remove_active_room(game_id)
     await evict_state(game_id)
     logger.info("game finished and closed: room=%s", game_id)
 
@@ -71,7 +72,7 @@ async def joinGame(sid, data):
         await sio.emit("join_error", {"message": "Invalid game_id."}, to=sid)
         return
 
-    if game_id not in active_game_rooms:
+    if not await is_active_room(game_id):
         await sio.emit("join_error", {"message": "No game found with that code."}, to=sid)
         return
 
@@ -87,7 +88,7 @@ async def joinGame(sid, data):
     if not game_doc:
         await sio.emit("join_error", {"message": "Game not found."}, to=sid)
         return
-    if game_doc.get("user") != user_id and game_doc.get("opponent") != user_id:
+    if not is_participant(game_doc, user_id):
         await sio.emit("join_error", {"message": "You are not a participant in this game."}, to=sid)
         return
 
@@ -120,10 +121,10 @@ async def leaveGame(sid, data):
 
     await sio.leave_room(sid, game_id)
 
-    if game_id in active_game_rooms:
+    if await is_active_room(game_id):
         remaining = list(sio.manager.get_participants("/", game_id))
         if not remaining:
-            active_game_rooms.discard(game_id)
+            await remove_active_room(game_id)
             logger.info("leaveGame: room=%s removed (empty)", game_id)
         else:
             await sio.emit("left_game", {"room": game_id}, room=game_id)
@@ -141,14 +142,14 @@ async def subscribe_game(sid, data):
     if not isinstance(data, dict):
         return
     game_id = data.get("game_id", "")
-    if not isinstance(game_id, str) or not game_id or game_id not in active_game_rooms:
+    if not isinstance(game_id, str) or not game_id or not await is_active_room(game_id):
         return
     try:
         db = get_db()
         game_doc = await db.games.find_one({"_id": ObjectId(game_id)})
     except Exception:
         return
-    if not game_doc or (game_doc.get("user") != user_id and game_doc.get("opponent") != user_id):
+    if not game_doc or not is_participant(game_doc, user_id):
         await sio.emit("subscribe_error", {"message": "You are not a participant in this game."}, to=sid)
         return
     await sio.enter_room(sid, game_id)
@@ -173,7 +174,7 @@ async def unsubscribe_game(sid, data):
 #           ↓
 #   Server routes by move_type → validates → scores → mutates state
 #           ↓
-#   Redis fast write → MongoDB persistence
+#   MongoDB persistence → Redis cache update
 #           ↓
 #   Success: "play_move_ok" + "game_state" broadcast to whole room
 #   Failure: "play_error" + "game_state" sent back to the caller only
@@ -198,6 +199,13 @@ async def play_move(sid, data):
     if not isinstance(move_type, str) or move_type not in _VALID_MOVE_TYPES:
         await sio.emit("play_error", {"message": "move_type must be one of: place, pass, recycle, resign."}, to=sid)
         return
+
+    client_move_id = data.get("client_move_id")
+    if isinstance(client_move_id, str) and 0 < len(client_move_id) <= 128:
+        cached = await get_idempotency_result(game_id, client_move_id)
+        if cached:
+            await sio.emit(cached["event"], cached["data"], to=sid)
+            return
 
     try:
         if move_type == "place":
@@ -244,13 +252,18 @@ async def play_move(sid, data):
                 await sio.emit("game_state", {"game_id": game_id, **state}, to=sid)
         else:
             await sio.emit("play_move_ok", {"message": "Move accepted.", "move_type": move_type}, to=sid)
+            if client_move_id and len(client_move_id) <= 128:
+                await set_idempotency_result(
+                    game_id, client_move_id,
+                    "play_move_ok", {"message": "Move accepted.", "move_type": move_type},
+                )
             await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
             if state.get("status") == "finished":
                 await _close_finished_game(game_id)
             elif state.get("status") == "active":
                 next_player = state.get("turn")
                 if next_player and next_player != user_id:
-                    asyncio.create_task(send_turn_notification(next_player, game_id))
+                    spawn(send_turn_notification(next_player, game_id))
 
     except Exception as exc:
         logger.exception("play_move unhandled error: room=%s user=%s type=%s: %s", game_id, user_id, move_type, exc)
@@ -274,24 +287,29 @@ async def resolve_dispute(sid, data):
 
     dispute = bool(data.get("dispute", False))
 
-    cancel_dispute_timeout(game_id)
-    state, error = await apply_resolve_dispute(game_id, user_id, dispute)
+    try:
+        cancel_dispute_timeout(game_id)
+        state, error = await apply_resolve_dispute(game_id, user_id, dispute)
 
-    logger.info("resolve_dispute: room=%s user=%s dispute=%s error=%s", game_id, user_id, dispute, error)
+        logger.info("resolve_dispute: room=%s user=%s dispute=%s error=%s", game_id, user_id, dispute, error)
 
-    if error:
-        await sio.emit("play_error", {"message": error}, to=sid)
-        if state:
-            await sio.emit("game_state", {"game_id": game_id, **state}, to=sid)
-    else:
-        await sio.emit("play_move_ok", {"message": "Dispute resolved.", "move_type": "resolve_dispute"}, to=sid)
-        await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
-        if state.get("status") == "finished":
-            await _close_finished_game(game_id)
-        elif state.get("status") == "active":
-            next_player = state.get("turn")
-            if next_player and next_player != user_id:
-                asyncio.create_task(send_turn_notification(next_player, game_id))
+        if error:
+            await sio.emit("play_error", {"message": error}, to=sid)
+            if state:
+                await sio.emit("game_state", {"game_id": game_id, **state}, to=sid)
+        else:
+            await sio.emit("play_move_ok", {"message": "Dispute resolved.", "move_type": "resolve_dispute"}, to=sid)
+            await sio.emit("game_state", {"game_id": game_id, **state}, room=game_id)
+            if state.get("status") == "finished":
+                await _close_finished_game(game_id)
+            elif state.get("status") == "active":
+                next_player = state.get("turn")
+                if next_player and next_player != user_id:
+                    spawn(send_turn_notification(next_player, game_id))
+
+    except Exception as exc:
+        logger.exception("resolve_dispute unhandled error: room=%s user=%s: %s", game_id, user_id, exc)
+        await sio.emit("play_error", {"message": "An internal error occurred. Please try again."}, to=sid)
 
 
 @sio.event
@@ -317,8 +335,8 @@ async def nudge_player(sid, data):
     if not game_doc:
         await sio.emit("nudge_error", {"message": "Game not found."}, to=sid)
         return
-    if user_id not in (game_doc.get("user"), game_doc.get("opponent")):
-        await sio.emit("nudge_error", {"message": "Not a participant."}, to=sid)
+    if not is_participant(game_doc, user_id):
+        await sio.emit("nudge_error", {"message": "You are not a participant in this game."}, to=sid)
         return
 
     state = await get_game_state(game_id)
@@ -353,7 +371,7 @@ async def nudge_player(sid, data):
             return
 
     # Append Z so clients (JavaScript) parse the timestamp as UTC, not local time.
-    nudge_time = now.isoformat().replace("+00:00", "Z")
+    nudge_time = utc_now_iso()
     try:
         await db.games.update_one(
             {"_id": ObjectId(game_id)},
@@ -364,6 +382,6 @@ async def nudge_player(sid, data):
         await sio.emit("nudge_error", {"message": "Could not send nudge."}, to=sid)
         return
 
-    asyncio.create_task(send_nudge_notification(target_id, game_id))
+    spawn(send_nudge_notification(target_id, game_id))
     logger.info("nudge_player: room=%s nudger=%s target=%s", game_id, user_id, target_id)
     await sio.emit("nudge_ok", {"nudged_at": nudge_time}, to=sid)

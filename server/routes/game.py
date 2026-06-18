@@ -1,81 +1,21 @@
 import asyncio
-from typing import Dict, List, Optional
+from typing import List, Optional
 from datetime import datetime
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from db import get_db
-from models import ChallengeResponse, GameBase, GameMove, GameOut, GameState, GameStateSummary
+from models import ChallengeResponse, GameBase, GameMove, GameOut, GameState
 from routes.auth import get_current_user
 from services.game_state import build_initial_state, get_game_state
 from services.push import send_challenge_notification
 from services.redis_cache import evict_state
-from services.room import active_game_rooms
+from services.room import add_active_room, remove_active_room
 from sockets import sio, socket_manager
-from utils.helpers import user_doc_to_out, validate_object_id
-
+from utils.helpers import is_participant, spawn, validate_object_id
+from utils.game_out import games_to_out, build_game_out
 
 router = APIRouter(prefix="/game", dependencies=[Depends(get_current_user)])
-
-
-async def _fetch_users_by_ids(db, user_ids: List[str]) -> Dict[str, dict]:
-    """Fetch multiple users in a single query, returning a dict keyed by string id."""
-    oids = [validate_object_id(uid, "user id") for uid in user_ids]
-    docs = await db.users.find({"_id": {"$in": oids}}).to_list(length=None)
-    return {str(doc["_id"]): doc for doc in docs}
-
-
-def _build_game_state_summary(game_state_doc: dict) -> GameStateSummary:
-    moves = game_state_doc.get("game_moves", [])
-    last_non_initial = next(
-        (m for m in reversed(moves) if m.get("move_type") != "initial"),
-        None,
-    )
-    return GameStateSummary(
-        turn=game_state_doc.get("turn"),
-        status=game_state_doc.get("status", "waiting"),
-        last_move_at=last_non_initial["timestamp"] if last_non_initial else None,
-        scores=game_state_doc.get("scores", {}),
-    )
-
-
-def _build_game_out(game: dict, user_cache: Dict[str, dict]) -> GameOut:
-    user_doc = user_cache.get(game["user"])
-    opponent_doc = user_cache.get(game["opponent"])
-    if not user_doc or not opponent_doc:
-        raise HTTPException(status_code=404, detail="Game participant not found")
-
-    game_state_doc = game.get("game_state")
-    game_state_summary = _build_game_state_summary(game_state_doc) if game_state_doc else None
-
-    return GameOut(
-        id=str(game["_id"]),
-        user=user_doc_to_out(user_doc),
-        opponent=user_doc_to_out(opponent_doc),
-        dictionary=game.get("dictionary", "TWL06"),
-        board_type=game.get("board_type", "standard"),
-        turn_timer=game.get("turn_timer", False),
-        duration=game.get("duration"),
-        timeIncrement=game.get("timeIncrement"),
-        online=game.get("online", True),
-        disputes=game.get("disputes", False),
-        completed=game.get("completed", False),
-        winner=game.get("winner"),
-        loser=game.get("loser"),
-        userScore=game.get("userScore", 0),
-        opponentScore=game.get("opponentScore", 0),
-        date=game.get("date"),
-        game_state=game_state_summary,
-        invitation_status=game.get("invitation_status", "pending"),
-        nudges=game.get("nudges", {}),
-    )
-
-
-async def _games_to_out(games: List[dict], db) -> List[GameOut]:
-    """Convert a list of game documents to GameOut, batching the user lookups."""
-    user_ids = list({g["user"] for g in games} | {g["opponent"] for g in games})
-    user_cache = await _fetch_users_by_ids(db, user_ids)
-    return [_build_game_out(g, user_cache) for g in games]
 
 
 @router.post("/create", response_model=GameOut, status_code=201)
@@ -92,6 +32,14 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
     sids = socket_manager.get_sids(user_id)
     if not sids:
         raise HTTPException(status_code=400, detail="No active socket connection.")
+
+    initial_state = build_initial_state(
+        creator_id=user_id,
+        disputes=payload.disputes,
+        dispute_timeout=payload.dispute_timeout,
+        dictionary=payload.dictionary,
+    )
+    initial_state_for_db = {k: v for k, v in initial_state.items() if k != "game_moves"}
 
     result = await db.games.insert_one({
         "opponent": payload.opponent,
@@ -110,16 +58,19 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
         "opponentScore": 0,
         "date": datetime.now(),
         "invitation_status": "pending",
-        "game_state": build_initial_state(
-            creator_id=user_id,
-            disputes=payload.disputes,
-            dispute_timeout=payload.dispute_timeout,
-            dictionary=payload.dictionary,
-        ),
+        "game_state": initial_state_for_db,
     })
 
     game_id = str(result.inserted_id)
-    active_game_rooms.add(game_id)
+    # Save the initial move to db.moves for cold-load reconstruction.
+    # Roll back the game document if this fails so the two writes stay in sync.
+    initial_move = initial_state["game_moves"][0]
+    try:
+        await db.moves.insert_one({"game_id": game_id, "user_id": None, **initial_move})
+    except Exception:
+        await db.games.delete_one({"_id": result.inserted_id})
+        raise HTTPException(status_code=500, detail="Failed to initialise game. Please try again.")
+    await add_active_room(game_id)
 
     for sid in sids:
         await sio.enter_room(sid, game_id)
@@ -135,31 +86,40 @@ async def create_game(payload: GameBase, current_user=Depends(get_current_user))
             {"game_id": game_id, "challenger_name": creator_name},
             to=opponent_sids[0],
         )
-    asyncio.create_task(send_challenge_notification(payload.opponent, game_id, creator_name))
+    spawn(send_challenge_notification(payload.opponent, game_id, creator_name))
 
     game_doc = await db.games.find_one({"_id": result.inserted_id})
-    results = await _games_to_out([game_doc], db)
+    results = await games_to_out([game_doc], db)
     return results[0]
 
 
 @router.get("/mine", response_model=List[GameOut])
-async def get_my_games(completed: Optional[bool] = None, current_user=Depends(get_current_user)):
+async def get_my_games(
+    completed: Optional[bool] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    skip: int = Query(default=0, ge=0),
+    current_user=Depends(get_current_user),
+):
     user_id = str(current_user["_id"])
     db = get_db()
     query: dict = {"$or": [{"user": user_id}, {"opponent": user_id}]}
     if completed is not None:
         query["completed"] = completed
-    games = await db.games.find(query).sort("date", -1).to_list(length=None)
-    return await _games_to_out(games, db)
+    games = await db.games.find(query).sort("date", -1).skip(skip).limit(limit).to_list(length=limit)
+    return await games_to_out(games, db)
 
 
 @router.get("/user/{user_id}", response_model=List[GameOut])
-async def get_games_by_user(user_id: str):
+async def get_games_by_user(
+    user_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    skip: int = Query(default=0, ge=0),
+):
     validate_object_id(user_id, "user id")
     db = get_db()
     query = {"$or": [{"user": user_id}, {"opponent": user_id}]}
-    games = await db.games.find(query).sort("date", -1).to_list(length=None)
-    return await _games_to_out(games, db)
+    games = await db.games.find(query).sort("date", -1).skip(skip).limit(limit).to_list(length=limit)
+    return await games_to_out(games, db)
 
 
 @router.get("/{game_id}/state", response_model=GameState)
@@ -170,9 +130,9 @@ async def get_game_state_route(game_id: str, current_user=Depends(get_current_us
     game = await db.games.find_one({"_id": oid})
     if not game:
         raise HTTPException(status_code=404, detail="Game not found.")
-    if game.get("user") != user_id and game.get("opponent") != user_id:
+    if not is_participant(game, user_id):
         raise HTTPException(status_code=403, detail="You are not a participant in this game.")
-    state = game.get("game_state")
+    state = await get_game_state(game_id)
     if not state:
         raise HTTPException(status_code=404, detail="Game state not found.")
     return GameState(game_id=game_id, **state)
@@ -186,7 +146,7 @@ async def get_game_moves(game_id: str, current_user=Depends(get_current_user), m
     game = await db.games.find_one({"_id": oid})
     if not game:
         raise HTTPException(status_code=404, detail="Game not found.")
-    if game.get("user") != user_id and game.get("opponent") != user_id:
+    if not is_participant(game, user_id):
         raise HTTPException(status_code=403, detail="You are not a participant in this game.")
     query: dict = {"game_id": game_id}
     if move_type:
@@ -203,9 +163,9 @@ async def get_game(game_id: str, current_user=Depends(get_current_user)):
     game = await db.games.find_one({"_id": oid})
     if not game:
         raise HTTPException(status_code=404, detail="Game not found.")
-    if game.get("user") != user_id and game.get("opponent") != user_id:
+    if not is_participant(game, user_id):
         raise HTTPException(status_code=403, detail="You are not a participant in this game.")
-    results = await _games_to_out([game], db)
+    results = await games_to_out([game], db)
     return results[0]
 
 
@@ -230,10 +190,10 @@ async def respond_to_challenge(game_id: str, payload: ChallengeResponse, current
             {"_id": oid},
             {"$set": {"invitation_status": "rejected", "completed": True}},
         )
-        active_game_rooms.discard(game_id)
+        await remove_active_room(game_id)
         await evict_state(game_id)
         await sio.emit("game_cancelled", {"game_id": game_id, "reason": "rejected"}, room=game_id)
 
     game_doc = await db.games.find_one({"_id": oid})
-    results = await _games_to_out([game_doc], db)
+    results = await games_to_out([game_doc], db)
     return results[0]

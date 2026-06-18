@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import * as gameService from '../../services/game';
 import * as userService from '../../services/user';
@@ -12,8 +12,8 @@ import { NavBar } from './NavBar';
 import type { Tab } from './NavBar';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { socket } from '../../socket';
 import { useSocketStatus } from '../../hooks/useSocketStatus';
+import { useSocketEvent } from '../../hooks/useSocketEvent';
 import { HamburgerMenu } from '../shared/HamburgerMenu';
 
 interface GameDashboardProps {
@@ -31,17 +31,13 @@ export function GameDashboard({ onLogout }: GameDashboardProps) {
   const [activeTab, setActiveTab] = useState<Tab>('play');
   const socketConnected = useSocketStatus();
 
-  useEffect(() => {
-    function onChallenge({ game_id, challenger_name }: { game_id: string; challenger_name: string }) {
-      notify({
-        message: `${challenger_name} challenged you to a game!`,
-        action: { label: 'View', to: `/game/${game_id}` },
-        key: `challenge-${game_id}`,
-      });
-    }
-    socket.on('game_challenge', onChallenge);
-    return () => { socket.off('game_challenge', onChallenge); };
-  }, [notify]);
+  useSocketEvent<{ game_id: string; challenger_name: string }>('game_challenge', ({ game_id, challenger_name }) => {
+    notify({
+      message: `${challenger_name} challenged you to a game!`,
+      action: { label: 'View', to: `/game/${game_id}` },
+      key: `challenge-${game_id}`,
+    });
+  });
 
   async function handleCreate(params: CreateGameParams) {
     setBusy('create');

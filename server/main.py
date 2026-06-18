@@ -17,7 +17,6 @@ from services.dictionary import load_dictionaries
 from services.redis_cache import connect_to_redis, close_redis, get_redis
 from limiter import limiter
 from services.dispute_timers import cancel_all as cancel_all_dispute_timers
-from services.room import active_game_rooms
 from sockets import sio
 import sockets.game  # noqa: F401 — registers socket event handlers
 from routes.auth import router as auth_router
@@ -58,10 +57,11 @@ async def lifespan(app: FastAPI):
     await db.push_subscriptions.create_index([("user_id", 1), ("endpoint", 1)], unique=True)
     await db.games.create_index([("date", -1)])
 
-    # Restore in-memory room set from DB so active games survive server restarts
+    # Rebuild active rooms in Redis fresh from DB (delete+sadd prevents stale
+    # entries from a previous crashed run accumulating across restarts).
+    from services.room import reset_active_rooms
     active = await db.games.find({"completed": False}, {"_id": 1}).to_list(length=None)
-    for doc in active:
-        active_game_rooms.add(str(doc["_id"]))
+    await reset_active_rooms([str(doc["_id"]) for doc in active])
 
     yield
 
